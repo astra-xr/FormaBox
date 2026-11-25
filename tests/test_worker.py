@@ -142,7 +142,57 @@ def test_ocr(tmp_path):
     from PIL import ImageDraw,ImageFont
     p=tmp_path/'ocr.png'; im=Image.new('RGB',(500,130),'white');ImageDraw.Draw(im).text((20,20),'HELLO 123',fill='black',font=ImageFont.load_default(size=56));im.save(p)
     assert 'HELLO' in result(run(tmp_path,'image.ocr',[p],{'language':'eng'})).read_text().upper()
-@pytest.mark.skipif(not (shutil.which('libreoffice') or shutil.which('soffice')),reason='LibreOffice unavailable')
-def test_office(tmp_path):
-    p=tmp_path/'doc.rtf';p.write_text(r'{\rtf1\ansi FormaBox Test}')
-    assert len(PdfReader(result(run(tmp_path,'doc.pdf',[p]))).pages)==1
+
+@pytest.fixture
+def libreoffice_engine():
+    engine = textops.office_engine()
+    if engine is None:
+        pytest.skip('LibreOffice unavailable')
+    return Path(engine).absolute()
+
+
+@pytest.mark.usefixtures('libreoffice_engine')
+def test_office_rtf(tmp_path):
+    document = tmp_path / 'doc.rtf'
+    document.write_text(r'{\rtf1\ansi FormaBox RTF test}', encoding='ascii')
+    pages = PdfReader(result(run(tmp_path, 'doc.pdf', [document]))).pages
+    assert len(pages) == 1
+    assert 'FormaBox RTF test' in pages[0].extract_text()
+
+
+def test_office_docx(tmp_path, libreoffice_engine, monkeypatch):
+    document = tmp_path / '中文 示例.docx'
+    expected_text = 'FormaBox Word conversion test'
+    with zipfile.ZipFile(document, 'w', zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr('[Content_Types].xml', '''
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Override PartName="/word/document.xml"
+            ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>''')
+        archive.writestr('_rels/.rels', '''
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Target="word/document.xml"
+                Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"/>
+</Relationships>''')
+        archive.writestr('word/document.xml', f'''
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body><w:p><w:r><w:t>{expected_text}</w:t></w:r></w:p></w:body>
+</w:document>''')
+
+    original = document.read_bytes()
+    monkeypatch.setenv('FORMABOX_SOFFICE', str(libreoffice_engine))
+    request = dict(tool='doc.pdf', inputs=[str(document)], output=str(tmp_path / '输出 文件'))
+    process = subprocess.run(
+        [sys.executable, '-m', 'formabox', 'run', '--request', '-'],
+        input=json.dumps(request, ensure_ascii=False), encoding='utf-8', capture_output=True,
+    )
+    assert process.returncode == 0, process.stdout + process.stderr
+    event = json.loads(process.stdout.splitlines()[-1])
+    assert event['event'] == 'result'
+    output = Path(event['files'][0])
+    assert output.name == '0001-中文 示例.pdf'
+    pages = PdfReader(output).pages
+    assert len(pages) == 1
+    assert expected_text in pages[0].extract_text()
+    assert document.read_bytes() == original

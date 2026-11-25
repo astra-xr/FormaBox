@@ -17,12 +17,14 @@ $testRoot = (New-Item -ItemType Directory -Path (Join-Path $env:TEMP "FormaBox-$
 $target = Join-Path $testRoot '万象 安装'
 $uninstaller = Join-Path $target 'Uninstall.exe'
 $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) '万象.lnk'
+$desktopShortcut = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) '万象.lnk'
 
 try {
     Invoke-CheckedProcess $setupPath "/S /D=$target"
     if (!(Test-Path -LiteralPath $uninstaller) -or !(Test-Path -LiteralPath $shortcut) -or
+        !(Test-Path -LiteralPath $desktopShortcut) -or
         (Get-ItemProperty -LiteralPath $registry).InstallLocation -ne $target) {
-        throw 'Installation files, Start menu shortcut, or uninstall registration are missing'
+        throw 'Installation files, shortcuts, or uninstall registration are missing'
     }
 
     $previousPath = $env:Path
@@ -51,6 +53,7 @@ try {
     Invoke-CheckedProcess $uninstaller "/S _?=$target"
     if ((Test-Path -LiteralPath (Join-Path $target 'FormaBox.exe')) -or
         (Test-Path -LiteralPath $registry) -or (Test-Path -LiteralPath $shortcut) -or
+        (Test-Path -LiteralPath $desktopShortcut) -or
         !(Test-Path -LiteralPath $userFile)) {
         throw 'Uninstall did not remove registered app files or did not preserve the user file'
     }

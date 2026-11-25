@@ -1,5 +1,17 @@
 # 实际测试记录
 
+## 0.1.4 界面与启动入口
+
+浅色和深色主题使用渐变光晕与半透卡片。发布流程在 Windows 上构建并安装安装包，验证 Qt 界面和 worker 启动、桌面与开始菜单快捷方式、卸载清理和用户文件保留。
+
+## 0.1.3 Windows Office 转 PDF 与项目启动器验收
+
+使用 Windows x64 上的 LibreOffice 26.8.3.1，通过 `FORMABOX_SOFFICE` 指定自定义安装目录。DOCX 回归测试经 JSONL worker 转换，验证中文与空格路径、PDF 页数与可提取正文及原文件保留。RTF 回归测试验证输出 PDF 正文。另用 0.1.3 桌面随附 Python worker 完成 DOCX 转 PDF。
+
+`python -m pytest -q -ra tests` 为 **36 通过、0 跳过**。运行 `python tests/smoke_tools.py --scratch .dev` 为 **56 通过、0 跳过、0 失败**。系统 Python 的 pyreadline3 在 pytest 退出时报告句柄关闭异常，pytest 退出码为 0。Excel、PowerPoint 和复杂 Word 排版仍需专项验收。
+
+项目根目录的开发启动器 `FormaBox.exe` 在 Windows 上以 MSVC 2022 编译。通过 `FormaBox.exe --verify-runtime` 从其他工作目录启动 `dist/FormaBox.exe` 并加载 worker，退出码 0。
+
 ## 0.1.3 Windows x64 桌面与运行时
 
 于 Windows x64 上使用 MSVC 2022 和 Qt 6.8.3 完成 Release 编译。通过 CMake 部署至独立测试目录，用应用目录旁的 Qt、CPython 和 worker 启动「万象」，程序确认 QML 窗口实例和工具清单加载成功。以仅包含 Windows 系统目录的 PATH 启动桌面程序，并独立运行打包后的 worker，使用真实文件验证 43 项内置操作，0 项失败。13 项音视频、OCR 和 Office 转 PDF 操作因测试环境未提供可选外部引擎而跳过。

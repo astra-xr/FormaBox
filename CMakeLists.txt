@@ -1,10 +1,21 @@
 cmake_minimum_required(VERSION 3.21)
-project(FormaBox VERSION 0.1.3 LANGUAGES CXX)
+project(FormaBox VERSION 0.1.4 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(WIN32)
     # The Windows loader looks beside FormaBox.exe for the deployed Qt DLLs.
     set(CMAKE_INSTALL_BINDIR ".")
+    add_executable(FormaBoxLauncher WIN32 desktop/launcher_win.cpp)
+    set_target_properties(FormaBoxLauncher PROPERTIES
+        OUTPUT_NAME FormaBox
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/launcher/$<CONFIG>")
+    target_link_libraries(FormaBoxLauncher PRIVATE user32)
+    if(MSVC)
+        target_compile_options(FormaBoxLauncher PRIVATE /utf-8)
+        set_property(TARGET FormaBoxLauncher PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    elseif(MINGW)
+        target_link_options(FormaBoxLauncher PRIVATE -municode -static)
+    endif()
 endif()
 find_package(Qt6 6.5 REQUIRED COMPONENTS Quick QuickControls2)
 qt_standard_project_setup(REQUIRES 6.5)

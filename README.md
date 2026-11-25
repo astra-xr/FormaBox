@@ -2,13 +2,13 @@
 
 万象是一个免费、开源的 Windows 文件工具箱。可以在一个界面里做图片转换与压缩、PDF 合并与拆分、文本整理、批量文件处理，也可以把操作串成工作流。文件在本机处理，无需注册账号。
 
-**当前版本为 0.1.3，面向 64 位 Windows 10（1809 及以上）和 Windows 11。**
+**当前版本为 0.1.4，面向 64 位 Windows 10（1809 及以上）和 Windows 11。**
 
 ## 下载安装
 
-1. 在 [GitHub Release](https://github.com/astra-xr/FormaBox/releases/tag/v0.1.3) 下载 [Windows x64 安装包](https://github.com/astra-xr/FormaBox/releases/download/v0.1.3/FormaBox-0.1.3-Windows-x64-Setup.exe)。
+1. 在 [GitHub Release](https://github.com/astra-xr/FormaBox/releases/tag/v0.1.4) 下载 [Windows x64 安装包](https://github.com/astra-xr/FormaBox/releases/download/v0.1.4/FormaBox-0.1.4-Windows-x64-Setup.exe)。
 2. 双击安装包，按中文向导选择目录并安装。默认安装到 `%LOCALAPPDATA%\Programs\FormaBox`。
-3. 安装完成后，从开始菜单打开「万象」。卸载入口在 Windows「设置 → 应用」。
+3. 安装完成后，从桌面或开始菜单打开「万象」，也可以直接运行安装目录中的 `FormaBox.exe`。卸载入口在 Windows「设置 → 应用」。
 
 安装包自带 Qt 和 Python 运行环境。它暂未签名，Windows SmartScreen 可能显示未知发布者。可对照 Release 上的 `.sha256` 文件校验下载。
 
@@ -16,7 +16,7 @@
 | --- | --- |
 | 音视频转换、压缩和拼接 | FFmpeg |
 | 图片文字识别 | Tesseract 及所选语言的数据 |
-| Word、Excel、PPT 转 PDF | LibreOffice，本版暂缓验收 |
+| Word、Excel、PPT 转 PDF | LibreOffice |
 
 无需额外引擎即可使用内置的图片、PDF、文本和文件工具。程序会显示其他功能所缺的依赖。
 
@@ -44,10 +44,10 @@ CMakeLists.txt           Qt 桌面构建
 .\scripts\build-windows.ps1 -TestOnly
 # 测试、编译、安装开发构建（按实际 Qt 路径修改）
 .\scripts\build-windows.ps1 -QtPrefix 'C:\Qt\6.8.3\msvc2022_64'
-.\dist\FormaBox.exe
+.\FormaBox.exe
 ```
 
-FFmpeg、Tesseract（含所需语言包，例如 eng / chi_sim）、LibreOffice 需安装并配置 PATH。程序也会查找 Windows 上常规安装位置的 LibreOffice，可以用 `FORMABOX_SOFFICE` 指定 `soffice.com` 或 `soffice.exe` 的绝对路径。开发版可把 ffmpeg 等可执行文件放在 `dist/engines`，同时准备其运行时依赖。构建脚本支持 `-Python` 指定创建虚拟环境的 Python，`-Wheelhouse` 使用本地 wheel，`-WithHeic` 启用可选 HEIC 扩展。
+FFmpeg、Tesseract（含所需语言包，例如 eng / chi_sim）可通过 PATH 检测。万象会自动查找 Windows 默认安装位置的 LibreOffice。自定义目录可通过 `FORMABOX_SOFFICE` 指定 `soffice.com` 或 `soffice.exe` 的绝对路径，配置后重开万象。开发版可把 ffmpeg 等可执行文件放在 `dist/engines`，同时准备其运行时依赖。构建脚本支持 `-Python` 指定创建虚拟环境的 Python，`-Wheelhouse` 使用本地 wheel，`-WithHeic` 启用可选 HEIC 扩展。
 
 Qt 桌面程序优先使用 `FORMABOX_PYTHON` 指定的 Python，也可查找 `python/python.exe`、与 `dist` 同级的 `.venv` 和系统 Python。构建脚本会在当前 PowerShell 环境设置 Python 和工作进程路径。
 

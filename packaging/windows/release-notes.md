@@ -1,10 +1,10 @@
-## 万象 0.1.3
+## 万象 0.1.4
 
-万象（FormaBox）首个 Windows x64 安装预览版。应用界面和安装向导使用「万象」作为显示名称。
+新版界面加入雾蓝、浅紫的光晕，侧栏、工具卡和任务面板使用半透玻璃与细边高光，并保留浅色、深色和跟随系统三种主题。
 
-下载 `FormaBox-0.1.3-Windows-x64-Setup.exe` 后双击运行。安装向导可以选择新建目录或现有空目录，默认路径为 `%LOCALAPPDATA%\Programs\FormaBox`。安装完成后，可从开始菜单打开「万象」。可在 Windows「设置 → 应用」中卸载。
+- 再点同一个工具会保留已编辑的参数。分类高亮随当前分类保持，工具数量随搜索结果更新。
+- 工作流会检查第一步所需的输入数量、输出目录及各步骤的外部引擎。缺少的引擎会直接显示。
+- Windows 安装器在桌面和开始菜单均创建「万象」快捷方式。可直接运行安装目录中的 `FormaBox.exe`。
+- Office 转 PDF 已在 Windows 实测 DOCX 和 RTF，包括中文路径、PDF 正文与原文件保留。此功能需要 LibreOffice。
 
-- 支持 64 位 Windows 10（1809 及以上）和 Windows 11。安装包自带桌面和 Python 运行环境。
-- 图片、PDF、文本、文件工具和工作流在本地运行。
-- 音视频需要 FFmpeg，OCR 需要 Tesseract 及所选语言的数据。Word 等 Office 文档转 PDF 需要 LibreOffice，本版暂缓验收。
-- 安装包与校验值同时提供。本版尚无代码签名，Windows SmartScreen 可能显示未知发布者。
+下载 `FormaBox-0.1.4-Windows-x64-Setup.exe` 后双击安装。支持 64 位 Windows 10（1809 及以上）和 Windows 11。已有安装可先从 Windows「设置 → 应用」卸载再运行新安装包。安装包自带 Qt 和 Python 运行环境，同时提供 SHA-256 校验文件。安装包暂未签名。

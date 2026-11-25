@@ -23,7 +23,7 @@
 - ○ 自选采样率与声道、标签与封面、人声分离、本地语音识别与 SRT 字幕。
 
 ## 文档与数据
-- ✅ Office 文档转 PDF（LibreOffice，已测试 RTF，其他格式需专项验证）、编码转换、文本去重/去空行、字面替换、差异对比、统计、JSON 美化/压缩、CSV 转 JSON。
+- ✅ Office 文档转 PDF（LibreOffice，已在 Windows 和 Linux 验证 DOCX、RTF 转换及 PDF 正文，其他格式需专项验证）、编码转换、文本去重/去空行、字面替换、差异对比、统计、JSON 美化/压缩、CSV 转 JSON。
 - ✅ JSON 对象数组转 CSV，默认保护电子表格中的公式文本。
 - ◐ JSON/CSV/XML/YAML 双向转换已支持 JSON 对象数组与 CSV 互转，XML 和 YAML 待实现。
 - ○ Word/Excel/PPT 互转与高保真 PDF 转 Word、电子书、正则替换（限制回溯资源）、Markdown 编辑预览导出、编码检测。
