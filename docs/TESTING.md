@@ -1,5 +1,13 @@
 # 实际测试记录
 
+## 0.1.6 ZIP、工作流和任务取消回归
+
+在 Windows x64 上复现了空目录压缩后丢失、工作流切换步骤时进度倒退、无效取消标记遗留临时目录三个问题。新增的三个回归用例在修复前均失败，修复后均通过。
+
+- `python -m pytest -q -ra tests` 通过 39 项，0 失败，0 跳过。测试结束时，系统 Python 的 `pyreadline3` 打印了控制台句柄清理警告，退出码为 0。
+- `python tests/smoke_tools.py` 通过 56 项，0 失败，0 阻塞。使用本机 FFmpeg、Tesseract 和 LibreOffice 验证外部引擎，包括 DOCX 转 PDF。
+- 用 MSVC 2022 和 Qt 6.8.3 构建，再运行 `FormaBox.exe --verify-runtime` 检查更新后的项目启动入口，退出码为 0。随程序部署的 worker 报告版本 0.1.6。
+
 ## 0.1.5 指针跟随光效与 Windows 图标
 
 在 Windows x64、Qt 6.8.3 和 MSVC 2022 上编译。使用 Windows 平台插件和 Qt 软件渲染测试实际绘制。鼠标在同一按钮内从左侧移至右侧时，两处采样亮度按光斑所在位置切换。移出后光斑渐隐，点击“重载引擎”仍按原逻辑工作。项目根目录的启动器及主程序使用多分辨率 ICO，Windows 安装包同时为安装与卸载程序提供应用图标。

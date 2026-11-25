@@ -91,14 +91,32 @@ def join(ctx,inputs,p):
 
 @tool('file.zip','文件','ZIP 压缩')
 def zip_files(ctx,inputs,p):
-    out=ctx.path('archive.zip')
-    with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED,allowZip64=True) as z:
-        for i,f in enumerate(inputs):
-            if f.is_symlink(): raise ValueError('不支持符号链接输入')
-            for child in regular_files([f],ctx):
-                rel=child.relative_to(extended_path(f)) if f.is_dir() else Path(child.name); arc=Path(f'{i+1:04d}-{f.name}')/rel if f.is_dir() else Path(f'{i+1:04d}-{child.name}')
-                with child.open('rb') as src,z.open(arc.as_posix(),'w',force_zip64=True) as dest:
-                    copy_content(ctx,src,dest)
+    out = ctx.path('archive.zip')
+    with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
+        def add_file(file, member):
+            ctx.check()
+            with file.open('rb') as src, archive.open(member.as_posix(), 'w', force_zip64=True) as dest:
+                copy_content(ctx, src, dest)
+
+        for index, source in enumerate(inputs, 1):
+            if source.is_symlink():
+                raise ValueError('不支持符号链接输入')
+            member = Path(f'{index:04d}-{source.name}')
+            base = extended_path(source)
+            if base.is_file():
+                add_file(base, member)
+                continue
+
+            for folder, names, empty in walk_tree(base, ctx):
+                directory = member / folder.relative_to(base)
+                if empty:
+                    archive.mkdir(directory.as_posix())
+                for name in names:
+                    ctx.check()
+                    file = folder / name
+                    if not path_is_link(file) and file.is_file():
+                        add_file(file, directory / name)
+
     return [out]
 
 @tool('file.unzip','文件','安全解压 ZIP',[param('max_mib','最大解压 MiB','4096','number')])

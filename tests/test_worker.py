@@ -64,6 +64,21 @@ def test_split_join(tmp_path):
     with pytest.raises(ValueError):run(tmp_path,'file.join',[result(s)])
 def test_zip(tmp_path):
     p=tmp_path/'hello.txt';p.write_text('hi');z=result(run(tmp_path,'file.zip',[p]));d=result(run(tmp_path,'file.unzip',[z]));assert next(d.iterdir()).read_text()=='hi'
+
+def test_zip_keeps_empty_directories(tmp_path):
+    source = tmp_path / '资料'
+    (source / 'nested' / 'empty').mkdir(parents=True)
+    (source / 'notes.txt').write_text('notes', encoding='utf-8')
+    empty = tmp_path / 'empty-input'
+    empty.mkdir()
+
+    archive = result(run(tmp_path, 'file.zip', [source, empty]))
+    unpacked = result(run(tmp_path, 'file.unzip', [archive]))
+
+    assert (unpacked / '0001-资料' / 'notes.txt').read_text(encoding='utf-8') == 'notes'
+    assert (unpacked / '0001-资料' / 'nested' / 'empty').is_dir()
+    assert (unpacked / '0002-empty-input').is_dir()
+
 @pytest.mark.parametrize('name',['../escape.txt','/abs.txt','C:/bad','a/../../bad','a\\..\\bad','CON.txt'])
 def test_zip_path_traversal(tmp_path,name):
     z=tmp_path/'bad.zip';
@@ -87,10 +102,36 @@ def test_text(tmp_path):
     c=tmp_path/'a.csv';c.write_text('a,b\n1,2');assert json.loads(result(run(tmp_path,'data.csv_json',[c])).read_text())==[{'a':'1','b':'2'}]
 def test_workflow(tmp_path,img):
     r=execute({'steps':[{'tool':'image.resize','params':{'width':100,'height':100}},{'tool':'image.convert','params':{'format':'webp'}}],'inputs':[str(img)],'output':str(tmp_path/'out')},lambda *a,**k:None);p=result(r);assert Image.open(p).format=='WEBP' and Image.open(p).size==(100,75)
+
+def test_workflow_progress_across_steps(tmp_path, img):
+    second = tmp_path / 'second.png'
+    shutil.copyfile(img, second)
+    progress = []
+
+    def record(event, current, total, message):
+        assert event == 'progress'
+        progress.append(current / total)
+
+    execute({'steps': [{'tool': 'image.resize', 'params': {'width': 100, 'height': 100}},
+                       {'tool': 'image.convert', 'params': {'format': 'webp'}}],
+             'inputs': [str(img), str(second)], 'output': str(tmp_path / 'out')}, record)
+
+    assert progress == sorted(progress)
+    assert {0.0, 0.25, 0.5, 0.75} <= set(progress)
+
 def test_cancel(tmp_path,img):
     flag=tmp_path/'cancel';flag.touch()
     with pytest.raises(Cancelled):execute({'tool':'image.convert','inputs':[str(img)],'output':str(tmp_path/'out'),'cancel':str(flag)},lambda *a,**k:None)
     assert not list((tmp_path/'out').iterdir())
+
+def test_invalid_cancel_path_leaves_no_output(tmp_path, img):
+    output = tmp_path / 'out'
+    with pytest.raises(ValueError, match='取消标记'):
+        execute({'tool': 'image.convert', 'inputs': [str(img)], 'output': str(output),
+                 'cancel': 123}, lambda *args, **kwargs: None)
+
+    assert not output.exists()
+
 def test_bad_parameter(tmp_path,img):
     with pytest.raises(ValueError):run(tmp_path,'image.resize',[img],{'width':-1})
     with pytest.raises(ValueError):run(tmp_path,'image.convert',[img],{'bogus':1})

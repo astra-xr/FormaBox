@@ -238,21 +238,31 @@ def execute(req,progress=emit):
     if 'steps' in req and (not isinstance(steps, list) or not 1 <= len(steps) <= 32 or
                            not all(isinstance(step, dict) for step in steps)):
         raise ValueError('工作流需要 1–32 个有效步骤')
+    cancel_value = req.get('cancel')
+    if cancel_value is not None and not isinstance(cancel_value, str):
+        raise ValueError('取消标记需要有效的文件路径')
+    cancel = Path(cancel_value).absolute() if cancel_value else None
     inputs=[checked_path(x) for x in req['inputs']]
     output=extended_path(checked_path(req.get('output'),allow_missing=True))
     job=uuid.uuid4().hex[:12]; final=output/f'FormaBox-{job}'
     if any(p.is_dir() and display_path(output).is_relative_to(display_path(p)) for p in inputs): raise ValueError('输出目录不能位于输入文件夹内部')
     output.mkdir(parents=True,exist_ok=True)
     staging=Path(tempfile.mkdtemp(prefix='.formabox-',dir=output))
-    cancel=Path(req['cancel']).absolute() if req.get('cancel') else None
     try:
         if steps is not None:
-            current=inputs
-            for i,step in enumerate(steps):
-                root=staging/f'{i+1:02d}'; root.mkdir()
-                ctx=Context(root,cancel,progress); ctx.tick(i,len(steps),f'工作流 {i+1}/{len(steps)}')
-                current=invoke(step.get('tool'),current,step.get('params',{}),ctx)
-            results=current
+            def step_progress(event, current, total, message):
+                if total > 0:
+                    current = index + current / total
+                    total = len(steps)
+                progress(event, current=current, total=total, message=message)
+
+            results = inputs
+            for index, step in enumerate(steps):
+                root = staging / f'{index + 1:02d}'
+                root.mkdir()
+                ctx = Context(root, cancel, step_progress)
+                ctx.tick(0, 1, f'工作流 {index + 1}/{len(steps)}')
+                results = invoke(step.get('tool'), results, step.get('params', {}), ctx)
         else:
             ctx=Context(staging,cancel,progress)
             results=invoke(req['tool'],inputs,req.get('params',{}),ctx)
