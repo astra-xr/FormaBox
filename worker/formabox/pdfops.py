@@ -122,3 +122,12 @@ def from_images(ctx,inputs,p):
     ims=[]
     for f in inputs: ctx.check(); ims.append(load(f).convert('RGB'))
     dest=ctx.path('images.pdf'); ims[0].save(dest,save_all=True,append_images=ims[1:]); return [dest]
+
+
+@tool('pdf.compose', 'PDF', 'PDF 页面工作台', [param('pages', '页面顺序（JSON）', '[]')],
+      maximum=32, engines=['pypdf', 'pypdfium2', 'Pillow'],
+      description='预览、排序、旋转和组合 PDF 与图片页面。')
+def compose(ctx, inputs, params):
+    from .pdfworkbench import write_pages
+
+    return [write_pages(ctx, inputs, params['pages'])]

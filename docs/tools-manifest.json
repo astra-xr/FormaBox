@@ -453,6 +453,28 @@
     "engines": []
   },
   {
+    "id": "pdf.compose",
+    "category": "PDF",
+    "label": "PDF 页面工作台",
+    "params": [
+      {
+        "key": "pages",
+        "label": "页面顺序（JSON）",
+        "default": "[]",
+        "kind": "text",
+        "choices": []
+      }
+    ],
+    "minimum": 1,
+    "maximum": 32,
+    "description": "预览、排序、旋转和组合 PDF 与图片页面。",
+    "engines": [
+      "pypdf",
+      "pypdfium2",
+      "Pillow"
+    ]
+  },
+  {
     "id": "video.convert",
     "category": "视频",
     "label": "视频转换",

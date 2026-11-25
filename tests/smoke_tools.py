@@ -179,6 +179,9 @@ def run_suite(root):
     check('pdf.text', [pdf], lambda p: 'Page 2' in p[0].read_text(encoding='utf-8'))
     check('pdf.render', [pdf], lambda p: len(p) == 2 and image_info(p[0]) == ('PNG', (400, 600)))
     check('pdf.from_images', [image, image], lambda p: pdf_pages(p[0]) == 2)
+    check('pdf.compose', [pdf, image],
+          lambda p: pdf_pages(p[0]) == 2 and PdfReader(p[0]).pages[0].rotation == 90,
+          {'pages': json.dumps([dict(source=0, page=1, rotation=90), dict(source=1, page=0, rotation=0)])})
 
     check('video.convert', [video], lambda p: media_test(p[0], '0:v:0'), {'format': 'webm'})
     check('video.compress', [video], lambda p: media_test(p[0], '0:v:0'), {'height': 80, 'fps': 10})

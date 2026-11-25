@@ -1,5 +1,15 @@
 # 实际测试记录
 
+## 0.2.0 PDF 页面工作台、引擎设置与拖入推荐
+
+在 Windows x64 上用 MSVC 2022 和 Qt 6.8.3 编译。通过项目根目录运行 `FormaBox.exe --verify-runtime`，退出码为 0。桌面回归用中文及空格路径的 PDF 与 PNG 验证混合输入推荐、生成三张缩略图、调页、旋转、移除及通过任务队列写出 PDF。引擎设置面板在桌面回归里实际打开。
+
+- `python -m pytest -q -ra tests` 通过 42 项，0 失败，0 跳过。覆盖原 PDF 字节保留、重复插入页面、不同旋转角度、页数上限和错误清理。系统 Python 的 `pyreadline3` 仍在退出时打印控制台句柄清理警告，退出码为 0。
+- `python tests/smoke_tools.py` 通过 57 项，0 失败，0 阻塞。
+- `python -m formabox check-engines` 在本机真实运行 LibreOffice、FFmpeg 和 Tesseract。校验了 DOCX 转 PDF 的正文、FFmpeg 输出的音频采样及 Tesseract 的文字识别。
+
+页面工作台支持未加密 PDF 和单帧图片，每次最多 32 个来源、300 页。当前为本机开发构建。
+
 ## 0.1.6 ZIP、工作流和任务取消回归
 
 在 Windows x64 上复现了空目录压缩后丢失、工作流切换步骤时进度倒退、无效取消标记遗留临时目录三个问题。新增的三个回归用例在修复前均失败，修复后均通过。

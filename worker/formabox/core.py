@@ -103,6 +103,13 @@ def checked_path(value, *, allow_missing=False):
     return (extended_path(absolute) if len(str(absolute))>=248 else absolute).resolve()
 
 def find_executable(name):
+    variable = {'ffmpeg': 'FORMABOX_FFMPEG', 'tesseract': 'FORMABOX_TESSERACT'}.get(name)
+    configured = os.environ.get(variable) if variable else None
+    if configured:
+        candidate = Path(configured)
+        if candidate.is_absolute() and candidate.is_file() and (os.name != 'nt' or candidate.suffix.lower() == '.exe'):
+            return str(candidate)
+        return None
     if os.name!='nt':
         return shutil.which(name)
     for directory in os.get_exec_path():

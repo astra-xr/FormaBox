@@ -28,6 +28,8 @@ ApplicationWindow {
     property var params: ({})
     property var steps: []
     property string workflowNotice: ""
+    readonly property var workbenchImages: ["png", "jpg", "jpeg", "webp", "bmp", "tif", "tiff", "avif", "ico"]
+    readonly property var suggestions: recommendationsFor(inputs)
     readonly property bool selectedReady: selected !== null && !(selected.missing_engines || []).length
     readonly property bool inputCountValid: countFits(selected)
     readonly property bool canAddStep: selected !== null && steps.length < 32
@@ -229,7 +231,61 @@ ApplicationWindow {
         return accepted
     }
 
+    function recommendationsFor(paths) {
+        if (!paths.length)
+            return []
+        const suffixes = Array.from(backend.inputSuffixes(paths))
+        const office = ["docx", "doc", "xlsx", "xls", "pptx", "ppt", "odt", "ods", "odp", "rtf"]
+        const video = ["mp4", "mkv", "webm", "mov", "avi", "m4v"]
+        const audio = ["mp3", "wav", "flac", "aac", "ogg", "opus", "m4a"]
+        let ids = []
+        if (suffixes.every(suffix => office.includes(suffix)))
+            ids = ["doc.pdf"]
+        else if (suffixes.every(suffix => workbenchImages.includes(suffix)))
+            ids = ["image.compress", "pdf.from_images", "image.ocr"]
+        else if (suffixes.every(suffix => suffix === "pdf"))
+            ids = ["pdf.compose", "pdf.compress", "pdf.text"]
+        else if (suffixes.every(suffix => suffix === "pdf" || workbenchImages.includes(suffix)))
+            ids = ["pdf.compose"]
+        else if (suffixes.every(suffix => video.includes(suffix)))
+            ids = ["video.convert", "video.compress", "audio.convert"]
+        else if (suffixes.every(suffix => audio.includes(suffix)))
+            ids = ["audio.convert", "audio.concat"]
+        else if (suffixes.every(suffix => suffix === "zip"))
+            ids = ["file.unzip"]
+        else if (suffixes.every(suffix => suffix === "txt"))
+            ids = ["text.clean", "text.encoding"]
+
+        return ids.map(id => backend.tools.find(tool => tool.id === id)).filter(tool =>
+            tool && paths.length >= tool.minimum && (!tool.maximum || paths.length <= tool.maximum))
+    }
+
+    function openWorkbench() {
+        pdfWorkbench.open()
+        const suffixes = backend.inputSuffixes(inputs)
+        pdfWorkbench.importPaths(inputs.filter((path, i) => suffixes[i] === "pdf" || workbenchImages.includes(suffixes[i])))
+    }
+
+    function useSuggestion(tool) {
+        if ((tool.missing_engines || []).length) {
+            engineSettings.open()
+            return
+        }
+        if (tool.id !== "pdf.compose") {
+            category = tool.category
+            search.text = ""
+        }
+        chooseTool(tool)
+    }
+
     function chooseTool(tool) {
+        if (tool.id === "pdf.compose") {
+            if ((tool.missing_engines || []).length)
+                workflowNotice = "页面工作台需要 " + tool.missing_engines.join("、")
+            else
+                openWorkbench()
+            return
+        }
         if (selected && selected.id === tool.id)
             return
         selected = tool
@@ -297,7 +353,16 @@ ApplicationWindow {
                 root.workflowNotice = "已保存工作流"
         }
     }
-    onClosing: function(close){if(backend.busy){close.accepted=false;root.workflowNotice="请先取消或等待当前任务结束再关闭"}}
+    PdfWorkbench {
+        id: pdfWorkbench
+        objectName: "pdfWorkbench"
+        controller: backend
+        outputDirectory: output.text
+        onOutputDirectorySelected: function(directory) { output.text = directory }
+    }
+    EngineSettings { id: engineSettings; objectName: "engineSettings"; controller: backend }
+
+    onClosing: function(close){if(backend.busy || backend.inspecting){close.accepted=false;root.workflowNotice="请先取消或等待当前任务结束再关闭"}}
     header: Item {
         height: 75
         GlassSurface { anchors.fill: parent; anchors.margins: 14; anchors.bottomMargin: 0 }
@@ -317,7 +382,8 @@ ApplicationWindow {
                 onActivated: root.themeMode = ["system", "light", "dark"][currentIndex]
                 Accessible.name: "界面主题"
             }
-            GlassButton { text: "重载引擎"; centered: true; onClicked: backend.reload() }
+            GlassButton { text: "页面工作台"; onClicked: root.openWorkbench() }
+            GlassButton { text: "引擎设置"; onClicked: engineSettings.open() }
         }
     }
     RowLayout {
@@ -355,6 +421,21 @@ ApplicationWindow {
                 ColumnLayout { anchors.centerIn: parent; spacing: 8
                     Label { text: "将文件拖入这里"; font.pixelSize: 23; font.bold: true; color: root.ink; Layout.alignment: Qt.AlignHCenter }
                     RowLayout { Layout.alignment: Qt.AlignHCenter; GlassButton { text: "选择文件"; onClicked: files.open() } GlassButton { text: "选择文件夹"; onClicked: folder.open() } Label { text: root.inputs.length+" 个输入"; color: root.muted } }
+                }
+            }
+            Flow {
+                Layout.fillWidth: true
+                visible: root.suggestions.length > 0
+                spacing: 6
+                Label { text: "推荐操作"; color: root.muted; height: 34; verticalAlignment: Text.AlignVCenter }
+                Repeater {
+                    model: root.suggestions
+                    delegate: GlassButton {
+                        required property var modelData
+                        compact: true
+                        text: (modelData.missing_engines || []).length ? "配置 · " + modelData.label : modelData.label
+                        onClicked: root.useSuggestion(modelData)
+                    }
                 }
             }
             RowLayout {

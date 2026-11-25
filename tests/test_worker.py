@@ -43,6 +43,58 @@ def test_pdf_password(tmp_path,pdf):
     e=result(run(tmp_path,'pdf.encrypt',[pdf],{'password':'secret123'}));assert PdfReader(e).is_encrypted
     d=result(run(tmp_path,'pdf.decrypt',[e],{'password':'secret123'}));assert not PdfReader(d).is_encrypted and len(PdfReader(d).pages)==2
     with pytest.raises(ValueError):run(tmp_path,'pdf.decrypt',[e],{'password':'wrong'})
+
+
+def test_workbench_thumbnails_and_export(tmp_path, pdf, img):
+    from formabox.pdfworkbench import preview_pages
+
+    before = pdf.read_bytes()
+    thumbnails = tmp_path / '缩略图'
+    thumbnails.mkdir()
+    request = dict(inputs=[str(pdf), str(img)], limit=3, output=str(thumbnails))
+    previews = preview_pages(request)
+    assert [(row['source'], row['page']) for row in previews] == [(0, 0), (0, 1), (1, 0)]
+    for row in previews:
+        with Image.open(thumbnails / row['thumbnail']) as thumbnail:
+            assert thumbnail.format == 'PNG'
+            assert thumbnail.width <= 161 and thumbnail.height <= 211
+    with Image.open(thumbnails / previews[2]['thumbnail']) as thumbnail:
+        assert thumbnail.getpixel((20, 20)) == (255, 0, 0)
+
+    order = [dict(source=0, page=1, rotation=90), dict(source=1, page=0, rotation=0),
+             dict(source=0, page=1, rotation=180)]
+    output = result(run(tmp_path, 'pdf.compose', [pdf, img], {'pages': json.dumps(order)}))
+    pages = PdfReader(output).pages
+    assert [(page.mediabox.width, page.rotation) for page in pages] == [(400, 90), (320, 0), (400, 180)]
+    assert pdf.read_bytes() == before
+    assert Image.open(img).size == (320, 240)
+
+
+def test_workbench_limits_and_cleanup(tmp_path, pdf):
+    from formabox.pdfworkbench import preview_pages
+
+    thumbnails = tmp_path / 'preview'
+    thumbnails.mkdir()
+    with pytest.raises(ValueError, match='300'):
+        preview_pages(dict(inputs=[str(pdf)], limit=1, output=str(thumbnails)))
+    assert not list(thumbnails.iterdir())
+
+    order = json.dumps([dict(source=0, page=0, rotation=90), dict(source=0, page=2, rotation=0)])
+    with pytest.raises(ValueError, match='页码超出范围'):
+        run(tmp_path, 'pdf.compose', [pdf], {'pages': order})
+    assert not list((tmp_path / 'out').iterdir())
+
+
+def test_engine_configuration_uses_saved_path(tmp_path, monkeypatch):
+    from formabox.core import find_executable
+
+    executable = tmp_path / 'ffmpeg.exe'
+    executable.touch()
+    monkeypatch.setenv('FORMABOX_FFMPEG', str(executable))
+    assert find_executable('ffmpeg') == str(executable)
+    monkeypatch.setenv('FORMABOX_FFMPEG', str(tmp_path / 'missing.exe'))
+    assert find_executable('ffmpeg') is None
+
 def test_encryption(tmp_path):
     f=tmp_path/'data.bin';f.write_bytes(os.urandom(2**20+35)); pw={'password':'correct horse battery staple'}; e=result(run(tmp_path,'privacy.encrypt',[f],pw)); assert e.read_bytes()!=f.read_bytes()
     assert result(run(tmp_path,'privacy.decrypt',[e],pw)).read_bytes()==f.read_bytes()

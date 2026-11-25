@@ -130,7 +130,7 @@ def office_engine():
     return find_executable('soffice') or find_executable('libreoffice')
 
 @tool('doc.pdf','文档','Office 转 PDF',engines=['LibreOffice'])
-def office(ctx,inputs,p):
+def office(ctx,inputs,p,timeout=300):
     engine=office_engine()
     if not engine: raise RuntimeError('未找到 LibreOffice')
     if not all(f.suffix.lower() in ('.docx','.doc','.xlsx','.xls','.pptx','.ppt','.odt','.ods','.odp','.rtf') for f in inputs): raise ValueError('不支持该文档格式')
@@ -139,7 +139,7 @@ def office(ctx,inputs,p):
         ctx.tick(i,len(inputs),f.name)
         with tempfile.TemporaryDirectory(prefix='formabox-lo-') as td:
             root=Path(td); profile=(root/'profile').as_uri(); target=root/'out'; target.mkdir()
-            ctx.run([engine,'-env:UserInstallation='+profile,'--headless','--convert-to','pdf','--outdir',str(target),str(f)],timeout=300)
+            ctx.run([engine,'-env:UserInstallation='+profile,'--headless','--convert-to','pdf','--outdir',str(target),str(f)],timeout=timeout)
             result=target/(f.stem+'.pdf')
             if not result.exists() or not result.stat().st_size: raise RuntimeError('LibreOffice 未生成 PDF')
             dest=ctx.path(f'{i+1:04d}-{f.stem}.pdf'); copy_file(ctx,result,dest); out.append(dest)

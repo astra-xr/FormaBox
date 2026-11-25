@@ -40,12 +40,27 @@ def main():
     catalogue=sub.add_parser('list',help='列出可配置的工具')
     catalogue.add_argument('--check-engines',action='store_true',help='附上当前环境缺少的引擎')
     sub.add_parser('doctor',help='检查本地依赖')
+    sub.add_parser('check-engines', help='使用样本运行外部引擎')
+    sub.add_parser('preview-pdf', help='从 stdin 读取页面工作台预览请求')
     run=sub.add_parser('run',help='执行单个工具或工作流')
     run.add_argument('--request',required=True,help='JSON 请求路径，或 - 从 stdin 读取')
     args=parser.parse_args()
     if args.command=='doctor':
         print(json.dumps(engine_availability(),ensure_ascii=False))
         return 0
+    if args.command in ('check-engines', 'preview-pdf'):
+        try:
+            if args.command == 'preview-pdf':
+                from .pdfworkbench import preview_pages
+                result = preview_pages(json.load(sys.stdin.buffer))
+            else:
+                from .engines import check_engines
+                result = check_engines()
+            print(json.dumps({'result': result}, ensure_ascii=False))
+            return 0
+        except Exception as error:
+            print(json.dumps({'error': str(error)}, ensure_ascii=False))
+            return 1
     if args.command=='list':
         specs=[spec for spec,_ in TOOLS.values()]
         if args.check_engines:
