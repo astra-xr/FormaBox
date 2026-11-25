@@ -36,7 +36,7 @@ try {
     $smokeScript = Join-Path $PSScriptRoot '../tests/smoke_tools.py'
     $reportPath = Join-Path $testRoot 'smoke.json'
     $python = Join-Path $target 'python/python.exe'
-    $arguments = '-B "{0}" --scratch "{1}" --report "{2}"' -f $smokeScript, $testRoot, $reportPath
+    $arguments = '-X utf8 -B "{0}" --scratch "{1}" --report "{2}"' -f $smokeScript, $testRoot, $reportPath
     $smoke = Start-Process -FilePath $python -ArgumentList $arguments -NoNewWindow -Wait -PassThru
     if ($smoke.ExitCode -notin 0, 2 -or !(Test-Path -LiteralPath $reportPath)) {
         throw 'Installed worker smoke test failed'

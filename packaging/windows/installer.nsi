@@ -33,8 +33,8 @@ VIAddVersionKey /LANG=2052 "LegalCopyright" "FormaBox contributors"
 
 Function .onInit
     ${IfNot} ${RunningX64}
-    ${OrIfNot} ${AtLeastWin10}
-        MessageBox MB_ICONSTOP "万象需要 64 位 Windows 10 或 Windows 11。"
+    ${OrIfNot} ${AtLeastBuild} 17763
+        MessageBox MB_ICONSTOP "万象需要 64 位 Windows 10（1809 及以上）或 Windows 11。"
         Abort
     ${EndIf}
     ReadRegStr $0 HKCU "${UNINSTALL_KEY}" "InstallLocation"
