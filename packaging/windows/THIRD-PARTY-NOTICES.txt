@@ -1,0 +1,24 @@
+FormaBox / 万象 — Windows installer
+
+The FormaBox application is covered by the MIT license in this directory.
+
+Qt 6.8.3 — LGPL-3.0. FormaBox dynamically loads the Qt libraries supplied in
+the application directory. These files can be replaced with ABI-compatible
+builds. The FormaBox distribution terms permit modification for your own use
+and reverse engineering for debugging those modifications. The GNU GPL and
+GNU LGPL texts and Qt's module notices and SPDX documents are supplied here.
+Corresponding Qt 6.8.3 source from the Qt Project:
+https://download.qt.io/archive/qt/6.8/6.8.3/submodules/
+Use the qtbase, qtdeclarative, and qtsvg archives from this directory.
+
+CPython — The PSF license and bundled Python component notices are in
+python/LICENSE.txt. Wheel notices are in python/Lib/site-packages in each
+distribution's .dist-info directory and accompanying license files. The
+wheel versions are listed in runtime-requirements.txt.
+
+Microsoft Visual C++ v143 runtime — Redistributable components from the
+Microsoft Visual Studio toolchain.
+https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files
+
+The installer is built with NSIS.
+https://nsis.sourceforge.io/

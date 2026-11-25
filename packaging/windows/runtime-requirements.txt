@@ -1,0 +1,6 @@
+Pillow==12.3.0
+pypdf==5.9.0
+pypdfium2==5.15.2
+cryptography==47.0.0
+cffi==2.1.1
+pycparser==2.21
