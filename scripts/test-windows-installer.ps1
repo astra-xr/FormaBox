@@ -27,7 +27,7 @@ try {
 
     $previousPath = $env:Path
     $env:Path = "$env:SystemRoot\System32;$env:SystemRoot"
-    Remove-Item Env:PYTHONHOME,Env:PYTHONPATH,Env:FORMABOX_PYTHON,Env:FORMABOX_WORKER_DIR -ErrorAction SilentlyContinue
+    Remove-Item Env:PYTHONHOME,Env:PYTHONPATH,Env:FORMABOX_PYTHON,Env:FORMABOX_WORKER_DIR,Env:QT_PLUGIN_PATH,Env:QML2_IMPORT_PATH,Env:QML_IMPORT_PATH -ErrorAction SilentlyContinue
     $env:QT_QPA_PLATFORM = 'windows'
     $env:QT_QUICK_BACKEND = 'software'
     $env:PYTHONUTF8 = '1'

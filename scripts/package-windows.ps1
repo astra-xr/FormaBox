@@ -19,6 +19,7 @@ if (!$CompilerRuntime) {
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
     $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
     $CompilerRuntime = Get-ChildItem (Join-Path $vs 'VC/Redist/MSVC') -Directory |
+        Where-Object { $_.Name -match '^\d+\.\d+\.\d+$' } |
         Sort-Object { [version]$_.Name } -Descending |
         ForEach-Object { Join-Path $_.FullName 'x64/Microsoft.VC143.CRT' } |
         Where-Object { Test-Path -LiteralPath $_ -PathType Container } |
