@@ -60,7 +60,8 @@ try {
             ForEach-Object { 'RMDir "$INSTDIR\' + (& $escape $_.FullName) + '"' }
     )
     [IO.File]::WriteAllLines($uninstallList, $commands, [Text.UTF8Encoding]::new($true))
-    & $MakeNsis /INPUTCHARSET UTF8 /WX "/DSETUP_EXE=$setup" "/DFORMABOX_VERSION=$version" "/DPAYLOAD=$payload" "/DUNINSTALL_LIST=$uninstallList" (Join-Path $recipe 'installer.nsi')
+    $icon = Join-Path $root 'desktop/assets/formabox.ico'
+    & $MakeNsis /INPUTCHARSET UTF8 /WX "/DSETUP_EXE=$setup" "/DFORMABOX_VERSION=$version" "/DPAYLOAD=$payload" "/DUNINSTALL_LIST=$uninstallList" "/DFORMABOX_ICON=$icon" (Join-Path $recipe 'installer.nsi')
     if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $setup -PathType Leaf)) {
         throw 'NSIS installer compilation failed'
     }

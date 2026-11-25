@@ -19,6 +19,8 @@ VIAddVersionKey /LANG=2052 "CompanyName" "FormaBox contributors"
 VIAddVersionKey /LANG=2052 "LegalCopyright" "FormaBox contributors"
 
 !define MUI_ABORTWARNING
+!define MUI_ICON "${FORMABOX_ICON}"
+!define MUI_UNICON "${FORMABOX_ICON}"
 !define MUI_FINISHPAGE_RUN "$INSTDIR\FormaBox.exe"
 !define MUI_FINISHPAGE_RUN_TEXT "启动万象"
 !insertmacro MUI_PAGE_WELCOME

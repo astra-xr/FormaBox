@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 3.21)
-project(FormaBox VERSION 0.1.4 LANGUAGES CXX)
+project(FormaBox VERSION 0.1.5 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(WIN32)
+    enable_language(RC)
     # The Windows loader looks beside FormaBox.exe for the deployed Qt DLLs.
     set(CMAKE_INSTALL_BINDIR ".")
     add_executable(FormaBoxLauncher WIN32 desktop/launcher_win.cpp)
@@ -20,6 +21,20 @@ endif()
 find_package(Qt6 6.5 REQUIRED COMPONENTS Quick QuickControls2)
 qt_standard_project_setup(REQUIRES 6.5)
 qt_add_executable(FormaBox WIN32 desktop/main.cpp desktop/controller.cpp desktop/controller.h)
+set(branding_dir "${CMAKE_CURRENT_SOURCE_DIR}/desktop/assets")
+qt_add_resources(FormaBox "branding"
+    PREFIX "/branding"
+    BASE "${branding_dir}"
+    FILES "${branding_dir}/formabox.png" "${branding_dir}/button-light.png")
+if(WIN32)
+    set(icon_resource "${branding_dir}/formabox.rc")
+    set_source_files_properties("${icon_resource}" PROPERTIES
+        OBJECT_DEPENDS "${branding_dir}/formabox.ico")
+    foreach(target FormaBox FormaBoxLauncher)
+        target_sources(${target} PRIVATE "${icon_resource}")
+        target_include_directories(${target} PRIVATE "$<$<COMPILE_LANGUAGE:RC>:${branding_dir}>")
+    endforeach()
+endif()
 set_source_files_properties(desktop/qml/Main.qml PROPERTIES QT_RESOURCE_ALIAS Main.qml)
 qt_add_qml_module(FormaBox URI FormaBox VERSION 1.0 QML_FILES desktop/qml/Main.qml)
 target_link_libraries(FormaBox PRIVATE Qt6::Quick Qt6::QuickControls2)

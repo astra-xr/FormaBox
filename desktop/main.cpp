@@ -1,5 +1,6 @@
 #include <QDebug>
 #include <QGuiApplication>
+#include <QIcon>
 #include <QJSValue>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -56,6 +57,7 @@ int main(int argc, char **argv)
     app.setApplicationName("FormaBox");
     app.setApplicationDisplayName(QStringLiteral("万象"));
     app.setApplicationVersion(QStringLiteral(FORMABOX_VERSION));
+    app.setWindowIcon(QIcon(QStringLiteral(":/branding/formabox.png")));
     QQuickStyle::setStyle("Fusion");
 
     Controller controller;

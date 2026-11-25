@@ -16,10 +16,12 @@ ApplicationWindow {
     readonly property color muted: dark ? "#b0bdd4" : "#505f79"
     readonly property color accent: dark ? "#aac1ff" : "#4759bb"
     readonly property color rim: dark ? "#5d8da6d5" : "#66859ccb"
-    readonly property color selection: dark ? "#526b9e" : "#dde7ff"
-    readonly property color hoverFill: dark ? "#415474" : "#ffffff"
-    readonly property color buttonTop: dark ? "#56475b7c" : "#b8ffffff"
-    readonly property color buttonBottom: dark ? "#2b263954" : "#5ee6eefc"
+    readonly property color buttonTop: dark ? "#dd586e91" : "#f8fbffff"
+    readonly property color buttonMiddle: dark ? "#d536486a" : "#e6edf4ff"
+    readonly property color buttonBottom: dark ? "#d522304a" : "#c8c9d8f9"
+    readonly property color buttonLitTop: dark ? "#627eb0" : "#ffffff"
+    readonly property color buttonLitMiddle: dark ? "#465e88" : "#e8f3ff"
+    readonly property color buttonLitBottom: dark ? "#2d4268" : "#c2d3fa"
     property string category: "全部"
     property var selected: null
     property var inputs: []
@@ -43,6 +45,7 @@ ApplicationWindow {
     property var categories: ["全部","图片","PDF","视频","音频","文档","文件","隐私"]
     color: canvas
     palette.window: canvas; palette.base: panel; palette.text: ink; palette.windowText: ink; palette.buttonText: ink; palette.button: panel; palette.highlight: accent
+    palette.placeholderText: muted; palette.highlightedText: dark ? "#17233a" : "#ffffff"
     background: Rectangle {
         color: root.canvas
         Halo {
@@ -104,40 +107,108 @@ ApplicationWindow {
         id: control
         property bool selected: false
         property bool primary: false
-        property bool centered: false
-        implicitHeight: 37
-        padding: 10
+        property bool centered: true
+        property bool compact: false
+        readonly property bool lit: enabled && (selected || hovered || visualFocus)
+        readonly property bool filled: enabled && primary
+        implicitWidth: Math.max(compact ? 30 : 56, implicitContentWidth + leftPadding + rightPadding)
+        implicitHeight: Math.max(compact ? 28 : 37, implicitContentHeight + topPadding + bottomPadding)
+        horizontalPadding: compact ? 7 : 10
+        verticalPadding: compact ? 2 : 5
         hoverEnabled: true
         font.weight: selected || primary ? Font.DemiBold : Font.Normal
+        HoverHandler {
+            id: pointer
+            enabled: control.enabled
+            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+            onPointChanged: {
+                if (hovered)
+                    reflection.position = point.position
+            }
+            onHoveredChanged: {
+                if (hovered)
+                    reflection.position = point.position
+            }
+        }
         contentItem: Label {
             text: control.text
             font: control.font
-            color: control.primary && control.enabled ? "#ffffff" : root.ink
-            opacity: control.enabled ? 1 : 0.62
+            color: control.filled ? "#ffffff" : root.ink
+            opacity: control.enabled ? 1 : 0.58
             wrapMode: Text.Wrap
             verticalAlignment: Text.AlignVCenter
             horizontalAlignment: control.centered ? Text.AlignHCenter : Text.AlignLeft
         }
-        background: Rectangle {
-            radius: 10
-            border.color: control.selected || control.visualFocus ? root.accent : root.rim
-            gradient: Gradient {
-                GradientStop {
-                    position: 0
-                    color: control.primary && control.enabled ? (control.down ? "#414abf" : "#5264dc")
-                          : control.selected || control.down ? root.selection
-                          : control.hovered ? root.hoverFill : root.buttonTop
+        background: Item {
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: -2
+                radius: 12
+                color: "transparent"
+                border.width: 2
+                border.color: root.dark ? "#5685b7ff" : "#45667cff"
+                opacity: control.lit ? (control.down ? 0.5 : 1) : 0
+                Behavior on opacity { NumberAnimation { duration: 140 } }
+            }
+            Rectangle {
+                anchors.fill: parent
+                radius: 10
+                border.color: control.visualFocus ? root.accent
+                              : control.filled ? "#8b9cff"
+                              : control.lit ? root.accent : root.rim
+                gradient: Gradient {
+                    GradientStop {
+                        position: 0
+                        color: control.filled ? (control.down ? "#4858c2" : "#7c93f2")
+                              : control.lit ? root.buttonLitTop : root.buttonTop
+                    }
+                    GradientStop {
+                        position: 0.46
+                        color: control.filled ? (control.down ? "#3544ac" : "#4a5fd9")
+                              : control.lit ? root.buttonLitMiddle : root.buttonMiddle
+                    }
+                    GradientStop {
+                        position: 1
+                        color: control.filled ? "#313ea7"
+                              : control.lit ? root.buttonLitBottom : root.buttonBottom
+                    }
                 }
-                GradientStop {
-                    position: 1
-                    color: control.primary && control.enabled ? "#3945b5"
-                          : control.selected || control.down ? root.selection
-                          : root.buttonBottom
+            }
+            Item {
+                id: reflection
+                objectName: "buttonReflection"
+                property point position: Qt.point(0, 0)
+                anchors.fill: parent
+                anchors.margins: 3
+                clip: true
+                visible: opacity > 0
+                opacity: pointer.hovered ? (control.down ? 0.55 : 1) : 0
+                Behavior on opacity { NumberAnimation { duration: 160; easing.type: Easing.OutQuad } }
+                Image {
+                    readonly property real radius: Math.max(24, Math.min(reflection.width * 0.6, reflection.height * 1.7))
+                    width: radius * 2
+                    height: width
+                    x: reflection.position.x - 3 - radius
+                    y: reflection.position.y - 3 - radius
+                    source: "qrc:/branding/button-light.png"
+                    smooth: true
+                }
+            }
+            Rectangle {
+                anchors { left: parent.left; right: parent.right; top: parent.top; leftMargin: 9; rightMargin: 9; topMargin: 2 }
+                height: 2
+                radius: 1
+                opacity: control.enabled ? (control.down ? 0.48 : 1) : 0.35
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0; color: "transparent" }
+                    GradientStop { position: 0.31; color: control.filled || root.dark ? "#d3f1ffff" : "#ffffff" }
+                    GradientStop { position: 0.69; color: control.lit ? "#e4c2efff" : "#8acfddff" }
+                    GradientStop { position: 1; color: "transparent" }
                 }
             }
         }
     }
-
     function countFits(tool) {
         return !!tool && inputs.length >= tool.minimum && (!tool.maximum || inputs.length <= tool.maximum)
     }
@@ -231,14 +302,11 @@ ApplicationWindow {
         height: 75
         GlassSurface { anchors.fill: parent; anchors.margins: 14; anchors.bottomMargin: 0 }
         RowLayout { anchors.fill: parent; anchors.leftMargin: 28; anchors.rightMargin: 28; anchors.topMargin: 14; spacing: 12
-            Rectangle {
-                Layout.preferredWidth: 38; Layout.preferredHeight: 38; radius: 11
-                gradient: Gradient {
-                    GradientStop { position: 0; color: "#778bf2" }
-                    GradientStop { position: 1; color: "#424fbd" }
-                }
-                border.color: "#aebaff"
-                Label { anchors.centerIn: parent; text: "万"; color: "#ffffff"; font.pixelSize: 22; font.bold: true }
+            Image {
+                Layout.preferredWidth: 42; Layout.preferredHeight: 42
+                source: "qrc:/branding/formabox.png"
+                fillMode: Image.PreserveAspectFit
+                mipmap: true
             }
             Label { text: "万象"; font.pixelSize: 22; font.bold: true; color: root.ink }
             Label { text: Qt.application.version; color: root.muted; font.pixelSize: 12 }
@@ -261,6 +329,7 @@ ApplicationWindow {
                     model: root.categories
                     delegate: GlassButton {
                         required property string modelData
+                        centered: false
                         text: modelData
                         selected: root.category === modelData
                         Layout.fillWidth: true
@@ -285,7 +354,7 @@ ApplicationWindow {
                 }
                 ColumnLayout { anchors.centerIn: parent; spacing: 8
                     Label { text: "将文件拖入这里"; font.pixelSize: 23; font.bold: true; color: root.ink; Layout.alignment: Qt.AlignHCenter }
-                    RowLayout { Layout.alignment: Qt.AlignHCenter; Button { text: "选择文件"; onClicked: files.open() } Button { text: "选择文件夹"; onClicked: folder.open() } Label { text: root.inputs.length+" 个输入"; color: root.muted } }
+                    RowLayout { Layout.alignment: Qt.AlignHCenter; GlassButton { text: "选择文件"; onClicked: files.open() } GlassButton { text: "选择文件夹"; onClicked: folder.open() } Label { text: root.inputs.length+" 个输入"; color: root.muted } }
                 }
             }
             RowLayout {
@@ -336,7 +405,7 @@ ApplicationWindow {
             }
             GlassSurface { Layout.fillWidth: true; Layout.preferredHeight: 174
                 ColumnLayout { anchors.fill: parent; anchors.margins: 10
-                    RowLayout { Label { text: "任务中心"; font.bold: true; color: root.ink } Item { Layout.fillWidth: true } Button { text: "清除历史"; enabled: !backend.busy; onClicked: backend.clearHistory() } }
+                    RowLayout { Label { text: "任务中心"; font.bold: true; color: root.ink } Item { Layout.fillWidth: true } GlassButton { text: "清除历史"; enabled: !backend.busy; onClicked: backend.clearHistory() } }
                     ListView { Layout.fillWidth: true; Layout.fillHeight: true; clip: true; model: backend.jobs; spacing: 4
                         delegate: RowLayout { required property var modelData; required property int index; width: ListView.view.width
                             ColumnLayout { Layout.fillWidth: true; Label { text: modelData.title+" · "+modelData.state; color: root.ink; Layout.fillWidth: true; elide: Text.ElideRight } Label { text: modelData.message; color: root.muted; Layout.fillWidth: true; elide: Text.ElideRight; font.pixelSize: 11 } }
@@ -346,8 +415,8 @@ ApplicationWindow {
                                 visible: modelData.state === "运行中" || modelData.state === "完成"
                                 Layout.preferredWidth: 75
                             }
-                            Button { text: "重试"; visible: modelData.canRetry === true; onClicked: backend.retry(index) }
-                            Button { text: modelData.directory?"打开":"取消"; visible: !!modelData.directory||modelData.state==="运行中"||modelData.state==="等待"; onClicked: modelData.directory?backend.openFolder(modelData.directory):backend.cancel(index) }
+                            GlassButton { text: "重试"; visible: modelData.canRetry === true; onClicked: backend.retry(index) }
+                            GlassButton { text: modelData.directory?"打开":"取消"; visible: !!modelData.directory||modelData.state==="运行中"||modelData.state==="等待"; onClicked: modelData.directory?backend.openFolder(modelData.directory):backend.cancel(index) }
                         }
                         ScrollBar.vertical: ScrollBar {}
                     }
@@ -365,9 +434,9 @@ ApplicationWindow {
                         text: visible ? "需要安装 " + (root.selected.missing_engines || []).join("、") : ""
                         color: root.muted; wrapMode: Text.Wrap; Layout.fillWidth: true
                     }
-                    RowLayout { Label { text: "输入文件 ("+root.inputs.length+")"; color: root.ink; font.bold: true } Item { Layout.fillWidth: true } Button { text: "清空"; onClicked: root.inputs=[] } }
+                    RowLayout { Label { text: "输入文件 ("+root.inputs.length+")"; color: root.ink; font.bold: true } Item { Layout.fillWidth: true } GlassButton { text: "清空"; onClicked: root.inputs=[] } }
                     ListView { Layout.fillWidth: true; Layout.preferredHeight: Math.min(100,root.inputs.length*30); clip: true; model: root.inputs
-                        delegate: RowLayout { required property string modelData; required property int index; width: ListView.view.width; Label { text: modelData; Layout.fillWidth: true; color: root.muted; elide: Text.ElideMiddle; ToolTip.visible: h.hovered; ToolTip.text: modelData; HoverHandler{id:h} } Button { text:"×"; onClicked:{let a=root.inputs.slice();a.splice(index,1);root.inputs=a} } }
+                        delegate: RowLayout { required property string modelData; required property int index; width: ListView.view.width; Label { text: modelData; Layout.fillWidth: true; color: root.muted; elide: Text.ElideMiddle; ToolTip.visible: h.hovered; ToolTip.text: modelData; HoverHandler{id:h} } GlassButton { compact: true; text:"×"; onClicked:{let a=root.inputs.slice();a.splice(index,1);root.inputs=a} } }
                     }
                     Repeater { model: root.selected?root.selected.params:[]; delegate: ColumnLayout { required property var modelData; Layout.fillWidth: true
                         Label { text: modelData.label; color: root.ink; Layout.fillWidth: true; wrapMode: Text.Wrap }
@@ -378,14 +447,14 @@ ApplicationWindow {
                         }
                     }}
                     Label { text: "输出目录"; color: root.ink; font.bold: true }
-                    RowLayout { Layout.fillWidth: true; TextField { id: output; text: backend.outputDefault; Layout.fillWidth: true } Button { text:"…"; onClicked: outputFolder.open() } }
+                    RowLayout { Layout.fillWidth: true; TextField { id: output; text: backend.outputDefault; Layout.fillWidth: true } GlassButton { compact: true; text:"…"; onClicked: outputFolder.open() } }
                     GlassButton { text: "加入任务队列"; primary: true; centered: true; Layout.fillWidth: true; enabled: root.selectedReady && root.inputCountValid && output.text.trim().length > 0; onClicked: {root.workflowNotice="";backend.submit(root.selected.id,root.inputs,root.params,output.text);if(root.selected.params.some(p=>p.kind==="password")){for(let p of root.selected.params)if(p.kind==="password")root.setParam(p.key,"")}} }
-                    Button { text: "添加到工作流"; Layout.fillWidth: true; enabled: root.canAddStep; onClicked: root.addStep()
+                    GlassButton { text: "添加到工作流"; Layout.fillWidth: true; enabled: root.canAddStep; onClicked: root.addStep()
                         ToolTip.visible: hovered && root.selected !== null && !root.canAddStep && root.steps.length < 32
                         ToolTip.text: "密码工具无法保存到工作流"
                     }
                     Label { text: "自动化工作流 · "+root.steps.length+" 步"; font.bold: true; color: root.ink }
-                    Repeater { model: root.steps; delegate: RowLayout { required property var modelData; required property int index; Layout.fillWidth: true; Label { text: (index+1)+". "+modelData.tool; color: root.muted; Layout.fillWidth: true; elide: Text.ElideRight } Button { text:"×"; onClicked:{let a=root.steps.slice();a.splice(index,1);root.steps=a} } } }
+                    Repeater { model: root.steps; delegate: RowLayout { required property var modelData; required property int index; Layout.fillWidth: true; Label { text: (index+1)+". "+modelData.tool; color: root.muted; Layout.fillWidth: true; elide: Text.ElideRight } GlassButton { compact: true; text:"×"; onClicked:{let a=root.steps.slice();a.splice(index,1);root.steps=a} } } }
                     Label {
                         visible: root.workflowMissing.length > 0
                         text: "工作流需要 " + root.workflowMissing.join("、")
@@ -397,10 +466,10 @@ ApplicationWindow {
                         text: "当前输入数量不符合工作流第一步的要求"
                         color: root.muted; wrapMode: Text.Wrap; Layout.fillWidth: true
                     }
-                    Button { text:"执行工作流"; Layout.fillWidth: true; enabled: root.workflowReady && output.text.trim().length > 0; onClicked: backend.submitWorkflow(root.steps,root.inputs,output.text) }
+                    GlassButton { text:"执行工作流"; Layout.fillWidth: true; enabled: root.workflowReady && output.text.trim().length > 0; onClicked: backend.submitWorkflow(root.steps,root.inputs,output.text) }
                     TextArea { id:workflowText; Layout.fillWidth:true; Layout.preferredHeight:75; placeholderText:"工作流 JSON（可复制保存）"; wrapMode:TextEdit.Wrap }
-                    RowLayout { Button { text:"查看 JSON"; enabled: root.steps.length > 0; onClicked:workflowText.text=JSON.stringify(root.steps,null,2) } Button { text:"载入文本"; enabled: workflowText.text.trim().length > 0; onClicked:root.loadWorkflow(workflowText.text) } }
-                    RowLayout { Button { text:"保存文件"; enabled: root.steps.length > 0; onClicked:saveWorkflowFile.open() } Button { text:"打开文件"; onClicked:openWorkflowFile.open() } }
+                    RowLayout { GlassButton { text:"查看 JSON"; enabled: root.steps.length > 0; onClicked:workflowText.text=JSON.stringify(root.steps,null,2) } GlassButton { text:"载入文本"; enabled: workflowText.text.trim().length > 0; onClicked:root.loadWorkflow(workflowText.text) } }
+                    RowLayout { GlassButton { text:"保存文件"; enabled: root.steps.length > 0; onClicked:saveWorkflowFile.open() } GlassButton { text:"打开文件"; onClicked:openWorkflowFile.open() } }
                     Label { text:"任务输出在独立目录；原始文件不会被覆盖。"; wrapMode:Text.Wrap; color:root.muted; Layout.fillWidth:true }
                 }
             }
