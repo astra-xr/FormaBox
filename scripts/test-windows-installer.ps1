@@ -35,23 +35,21 @@ try {
     $env:QT_QUICK_BACKEND = 'software'
     $env:PYTHONUTF8 = '1'
 
-    $shell = New-Object -ComObject WScript.Shell
-    $sendTo = $shell.CreateShortcut($sendToShortcut)
-    $application = Join-Path $target 'FormaBox.exe'
-    $sendTarget = ([string]$sendTo.TargetPath).Trim().Trim('"')
-    $sendArguments = ([string]$sendTo.Arguments).Trim().Trim('"')
-    if ($sendArguments -ne '--send-to' -or
-        [IO.Path]::GetFileName($sendTarget) -ne 'FormaBox.exe' -or
-        !(Test-Path -LiteralPath $sendTarget -PathType Leaf) -or
-        (Get-FileHash -LiteralPath $sendTarget).Hash -ne (Get-FileHash -LiteralPath $application).Hash) {
-        throw "Send To shortcut returned target [$sendTarget] with arguments [$sendArguments]. Expected [$application] with [--send-to]."
-    }
     $sentFiles = @('发送样本 甲.txt', '发送样本 乙.txt') | ForEach-Object {
         $path = Join-Path $testRoot $_
         Set-Content -LiteralPath $path -Value 'Send To fixture'
         $path
     }
-    Invoke-CheckedProcess $sendTarget ('--verify-runtime {0} "{1}" "{2}"' -f $sendArguments, $sentFiles[0], $sentFiles[1])
+    $sendArguments = '--verify-send-to "{0}" "{1}"' -f $sentFiles[0], $sentFiles[1]
+    $sendProcess = Start-Process -FilePath $sendToShortcut -ArgumentList $sendArguments -WindowStyle Hidden -PassThru
+    if (!$sendProcess) { throw 'Windows did not start a process from the Send To shortcut' }
+    if (!$sendProcess.WaitForExit(55000)) {
+        $sendProcess.Kill()
+        throw 'Send To shortcut did not complete runtime verification in 55 seconds'
+    }
+    if ($sendProcess.ExitCode) {
+        throw "Send To shortcut failed runtime verification with code $($sendProcess.ExitCode)"
+    }
     $smokeScript = Join-Path $PSScriptRoot '../tests/smoke_tools.py'
     $reportPath = Join-Path $testRoot 'smoke.json'
     $python = Join-Path $target 'python/python.exe'
@@ -74,7 +72,7 @@ try {
         !(Test-Path -LiteralPath $userFile)) {
         throw 'Uninstall did not remove registered app files or did not preserve the user file'
     }
-    Write-Host 'Installer registration, desktop startup, installed worker smoke tests and uninstall verified.'
+    Write-Host 'Installer registration, Send To file import, desktop startup, installed worker smoke tests and uninstall verified.'
 }
 finally {
     if ($previousPath) { $env:Path = $previousPath }

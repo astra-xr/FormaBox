@@ -278,10 +278,11 @@ int main(int argc, char **argv)
     app.setWindowIcon(QIcon(QStringLiteral(":/branding/formabox.png")));
     QQuickStyle::setStyle("Fusion");
 
-    const auto arguments = app.arguments();
+    auto arguments = app.arguments();
+    const bool verifyImport = arguments.removeAll("--verify-send-to") > 0;
     const auto sendTo = arguments.indexOf("--send-to");
     const auto options = sendTo < 0 ? arguments : arguments.first(sendTo);
-    const bool verify = options.contains("--verify-runtime");
+    const bool verify = verifyImport || options.contains("--verify-runtime");
     QVariantList launchedFiles;
     if (sendTo >= 0) {
         for (const auto &path : arguments.sliced(sendTo + 1)) {
@@ -314,9 +315,14 @@ int main(int argc, char **argv)
                 return;
             verificationStarted = true;
             auto *root = engine.rootObjects().constFirst();
-            const bool launchPassed = sendTo < 0 ||
-                (launchedFiles.size() == arguments.size() - sendTo - 1 &&
+            const bool checkImport = verifyImport || sendTo >= 0;
+            const bool launchPassed = !checkImport ||
+                (sendTo >= 0 && !launchedFiles.isEmpty() &&
+                 (!verifyImport || launchedFiles.size() == 2) &&
+                 launchedFiles.size() == arguments.size() - sendTo - 1 &&
                  engine.newQObject(root).property("inputs").toVariant().toList() == launchedFiles);
+            if (!launchPassed)
+                qWarning("Send To file import verification failed.");
             const bool passed = launchPassed && verifyDesktop(engine, root, controller);
             if (!passed)
                 qWarning("Desktop regression checks failed.");
