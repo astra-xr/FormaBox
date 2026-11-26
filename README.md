@@ -2,9 +2,9 @@
 
 万象是一个免费、开源的 Windows 文件工具箱。可以在一个界面里做图片转换与压缩、PDF 合并与拆分、文本整理、批量文件处理，也可以把操作串成工作流。文件在本机处理，无需注册账号。
 
-**当前源码版本为 0.3.0，已发布的 Windows 安装包版本为 0.2.0。** 支持 64 位 Windows 10（1809 及以上）和 Windows 11。
+**当前版本为 0.3.0（Windows 预览版）。** 支持 64 位 Windows 10（1809 及以上）和 Windows 11。
 
-在 PDF 页面工作台用缩略图调整 PDF 和图片的页序、旋转或移除页面。0.3.0 开发版可在导出时选择「限制导出大小」，查看选中页的压缩前后对照和实际大小，再决定是否保存。
+在 PDF 页面工作台用缩略图调整 PDF 和图片的页序、旋转或移除页面。0.3.0 可在导出时选择「限制导出大小」，查看选中页的压缩前后对照和实际大小，再决定是否保存。
 
 0.3.0 还支持为扫描 PDF 添加可搜索文字层，保留原页面外观。已有可提取文字的页面会跳过。压缩和 OCR 支持未加密的 PDF，每份最多 300 页、256 MiB。扫描 OCR 需要 Tesseract 及相应语言包。
 
@@ -12,7 +12,7 @@
 
 ## 下载安装
 
-1. 在 [GitHub Release](https://github.com/astra-xr/FormaBox/releases/tag/v0.2.0) 下载 [Windows x64 安装包](https://github.com/astra-xr/FormaBox/releases/download/v0.2.0/FormaBox-0.2.0-Windows-x64-Setup.exe)。
+1. 在 [GitHub Release](https://github.com/astra-xr/FormaBox/releases/tag/v0.3.0) 下载 [Windows x64 安装包](https://github.com/astra-xr/FormaBox/releases/download/v0.3.0/FormaBox-0.3.0-Windows-x64-Setup.exe)。
 2. 双击安装包，按中文向导选择目录并安装。默认安装到 `%LOCALAPPDATA%\Programs\FormaBox`。
 3. 安装完成后，从桌面或开始菜单打开「万象」，也可以直接运行安装目录中的 `FormaBox.exe`。卸载入口在 Windows「设置 → 应用」。
 
