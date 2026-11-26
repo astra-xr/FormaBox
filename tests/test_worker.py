@@ -24,7 +24,52 @@ def test_manifest():
 def test_image_convert(tmp_path,img):
     p=result(run(tmp_path,'image.convert',[img])); assert Image.open(p).format=='JPEG' and img.exists()
 def test_target(tmp_path,img):
-    p=result(run(tmp_path,'image.compress',[img],{'target_kib':1})); assert p.stat().st_size<=1024
+    reply = run(tmp_path, 'image.compress', [img], {'target_kib': 1})
+    assert result(reply).stat().st_size <= 1024
+    assert reply['details'] == [{'original_bytes': img.stat().st_size, 'target_bytes': 1024}]
+
+
+def test_rename_preview_and_confirm(tmp_path):
+    first = tmp_path / '甲 2025.txt'
+    second = tmp_path / '乙 2025.txt'
+    first.write_text('first', encoding='utf-8')
+    second.write_text('second', encoding='utf-8')
+    options = {'prefix': '资料-', 'start': 7, 'digits': 2}
+    preview = fileops.preview_rename(dict(inputs=[str(second), str(first)], params=options))
+    assert [row['name'] for row in preview['rows']] == ['资料-07.txt', '资料-08.txt']
+    assert not any(row['error'] for row in preview['rows'])
+    options['expected_plan'] = preview['plan']
+    outputs = [Path(name) for name in run(tmp_path, 'file.rename', [second, first], options)['files']]
+    assert [(p.name, p.read_text(encoding='utf-8')) for p in outputs] == [('资料-07.txt', 'second'), ('资料-08.txt', 'first')]
+    assert first.read_text(encoding='utf-8') == 'first' and second.read_text(encoding='utf-8') == 'second'
+    with pytest.raises(ValueError, match='顺序已变化'):
+        run(tmp_path, 'file.rename', [first, second], options)
+    assert not list((tmp_path / 'out').glob('.formabox-*'))
+
+
+def test_rename_replacement_conflicts_and_photo_date(tmp_path):
+    a = tmp_path / 'one'
+    b = tmp_path / 'two'
+    a.mkdir()
+    b.mkdir()
+    first, second = a / 'Camera-X.JPG', b / 'X.jpg'
+    exif = Image.Exif()
+    exif[36867] = '2026:02:03 12:34:56'
+    with Image.new('RGB', (30, 20), 'white') as image:
+        image.save(first, exif=exif)
+        image.save(second)
+    values = [str(first), str(second)]
+    options = {'mode': 'replace', 'find': 'Camera-', 'replacement': ''}
+    preview = fileops.preview_rename(dict(inputs=values, params=options))['rows']
+    assert all('重复' in row['error'] for row in preview)
+    with pytest.raises(ValueError, match='重复'):
+        run(tmp_path, 'file.rename', [first, second], options)
+    photo = {'mode': 'photo_date'}
+    preview = fileops.preview_rename(dict(inputs=values, params=photo))['rows']
+    assert preview[0]['name'] == '2026-02-03-Camera-X.JPG' and not preview[0]['error']
+    assert 'EXIF' in preview[1]['error']
+    output = result(run(tmp_path, 'file.rename', [first], photo))
+    assert output.name == preview[0]['name'] and output.read_bytes() == first.read_bytes()
 @pytest.mark.parametrize('tool,params,size',[('image.resize',{'width':100,'height':100},(100,75)),('image.transform',{'rotate':'90'},(240,320)),('image.crop',{'width':80,'height':50},(80,50)),('image.watermark',{},(320,240)),('privacy.image_clean',{},(320,240)),('privacy.image_redact',{},(320,240))])
 def test_images(tmp_path,img,tool,params,size):
     p=result(run(tmp_path,tool,[img],params)); assert Image.open(p).size==size

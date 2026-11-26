@@ -24,7 +24,7 @@ ApplicationWindow {
     readonly property color buttonLitBottom: dark ? "#2d4268" : "#c2d3fa"
     property string category: "全部"
     property var selected: null
-    property var inputs: []
+    property var inputs: Array.from(launchFiles)
     property var params: ({})
     property var steps: []
     property string workflowNotice: ""
@@ -34,11 +34,27 @@ ApplicationWindow {
         {name: "报名照压到 100 KB", tool: "image.compress", suffixes: workbenchImages,
          params: {format: "jpg", target_kib: "97"}, builtIn: true},
         {name: "Word 转 PDF", tool: "doc.pdf", suffixes: ["doc", "docx"], params: {}, builtIn: true},
-        {name: "扫描件转可搜索 PDF", tool: "pdf.ocr", suffixes: ["pdf"], params: {language: "chi_sim+eng"}, builtIn: true}
+        {name: "扫描件转可搜索 PDF", tool: "pdf.ocr", suffixes: ["pdf"], params: {language: "chi_sim+eng"}, builtIn: true},
+        {name: "图片缩放、压缩并合成 PDF", suffixes: workbenchImages, builtIn: true, steps: [
+            {tool: "image.resize", params: {width: "1600", height: "1600"}},
+            {tool: "image.compress", params: {format: "jpg", quality: "85"}},
+            {tool: "pdf.from_images", params: {}}
+        ]}
     ]
     readonly property var presetCatalog: builtInPresets.concat(Array.from(backend.presets))
     readonly property var matchingPresets: presetsFor(inputs)
     readonly property bool canSavePreset: selected !== null && !selected.params.some(p => p.kind === "password")
+    readonly property var editableParameters: selected ? selected.params.filter(parameter => {
+        if (parameter.kind === "internal")
+            return false
+        if (selected.id !== "file.rename")
+            return true
+        if (parameter.key === "mode")
+            return true
+        const mode = params.mode || "number"
+        const isReplacement = ["find", "replacement"].includes(parameter.key)
+        return isReplacement ? mode === "replace" : mode === "number"
+    }) : []
     readonly property bool selectedReady: selected !== null && !(selected.missing_engines || []).length
     readonly property bool inputCountValid: countFits(selected)
     readonly property bool canAddStep: selected !== null && steps.length < 32
@@ -240,6 +256,22 @@ ApplicationWindow {
         return accepted
     }
 
+    function moveInput(from, to) {
+        if (from < 0 || from >= inputs.length || to < 0 || to >= inputs.length)
+            return
+        const reordered = inputs.slice()
+        reordered.splice(to, 0, reordered.splice(from, 1)[0])
+        inputs = reordered
+    }
+
+    function openRenamePreview() {
+        if (backend.inspecting) {
+            workflowNotice = "请等待当前预览或检查结束"
+            return
+        }
+        renamePreview.showPreview(inputs, params, output.text)
+    }
+
     function recommendationsFor(paths) {
         if (!paths.length)
             return []
@@ -287,21 +319,37 @@ ApplicationWindow {
         chooseTool(tool)
     }
 
-    function presetFits(preset, tool, paths, suffixes) {
+    function presetTools(preset) {
+        const ids = preset.steps ? Array.from(preset.steps).map(step => step.tool) : [preset.tool]
+        return ids.map(id => backend.tools.find(tool => tool.id === id))
+    }
+
+    function presetMissing(tools) {
+        const missing = []
+        for (const tool of tools)
+            for (const engine of (tool ? tool.missing_engines || [] : []))
+                if (!missing.includes(engine))
+                    missing.push(engine)
+        return missing
+    }
+
+    function presetFits(preset, tools, paths, suffixes) {
         const expected = Array.from(preset.suffixes || [])
-        return !!tool && paths.length >= tool.minimum && (!tool.maximum || paths.length <= tool.maximum) &&
+        const first = tools[0]
+        return !!first && tools.every(tool => !!tool) && paths.length >= first.minimum &&
+               (!first.maximum || paths.length <= first.maximum) &&
                (!expected.length || suffixes.every(suffix => expected.includes(suffix)))
     }
 
     function presetsFor(paths) {
         const suffixes = Array.from(backend.inputSuffixes(paths))
         return presetCatalog.filter(preset => preset.suffixes.length > 0 &&
-            presetFits(preset, backend.tools.find(tool => tool.id === preset.tool), paths, suffixes))
+            presetFits(preset, presetTools(preset), paths, suffixes))
     }
 
     function runPreset(preset) {
-        const tool = backend.tools.find(item => item.id === preset.tool)
-        if (!presetFits(preset, tool, inputs, Array.from(backend.inputSuffixes(inputs)))) {
+        const tools = presetTools(preset)
+        if (!presetFits(preset, tools, inputs, Array.from(backend.inputSuffixes(inputs)))) {
             workflowNotice = "当前输入与预设不匹配"
             return
         }
@@ -309,18 +357,27 @@ ApplicationWindow {
             workflowNotice = "请选择输出目录"
             return
         }
-        if ((tool.missing_engines || []).length) {
+        if (presetMissing(tools).length) {
             presetManager.close()
             engineSettings.open()
             return
         }
+        if (preset.steps) {
+            backend.submitWorkflow(preset.steps, inputs, output.text)
+            presetManager.close()
+            return
+        }
+        const tool = tools[0]
         useSuggestion(tool)
         const values = {}
         for (const parameter of tool.params)
             values[parameter.key] = preset.params[parameter.key] ?? parameter.default
         params = values
-        backend.submit(tool.id, inputs, values, output.text)
         presetManager.close()
+        if (tool.id === "file.rename")
+            openRenamePreview()
+        else
+            backend.submit(tool.id, inputs, values, output.text)
     }
 
     function chooseTool(tool) {
@@ -406,6 +463,13 @@ ApplicationWindow {
         onOutputDirectorySelected: function(directory) { output.text = directory }
     }
     EngineSettings { id: engineSettings; objectName: "engineSettings"; controller: backend }
+    RenamePreview { id: renamePreview; objectName: "renamePreview"; controller: backend }
+    TaskResults {
+        id: taskResults
+        objectName: "taskResults"
+        controller: backend
+        onResultFilesChosen: function(paths) { root.inputs = paths }
+    }
     Dialog {
         id: presetManager
         title: "常用预设"
@@ -429,12 +493,12 @@ ApplicationWindow {
                 model: root.presetCatalog
                 delegate: RowLayout {
                     required property var modelData
-                    readonly property var tool: backend.tools.find(item => item.id === modelData.tool)
+                    readonly property var tools: root.presetTools(modelData)
                     width: ListView.view.width
-                    Label { text: modelData.name; textFormat: Text.PlainText; Layout.fillWidth: true; elide: Text.ElideRight }
+                    Label { text: modelData.name + (modelData.steps ? " · " + modelData.steps.length + " 步" : ""); textFormat: Text.PlainText; Layout.fillWidth: true; elide: Text.ElideRight }
                     Button {
-                        text: tool && (tool.missing_engines || []).length ? "配置引擎" : "运行"
-                        enabled: root.presetFits(modelData, tool, root.inputs,
+                        text: root.presetMissing(tools).length ? "配置引擎" : "运行"
+                        enabled: root.presetFits(modelData, tools, root.inputs,
                                                 Array.from(backend.inputSuffixes(root.inputs))) && output.text.trim() !== ""
                         onClicked: root.runPreset(modelData)
                     }
@@ -451,8 +515,8 @@ ApplicationWindow {
                 TextField {
                     id: presetName
                     Layout.fillWidth: true
-                    enabled: root.canSavePreset
-                    placeholderText: root.selected ? "保存 " + root.selected.label + " 的参数" : "请先选择要保存的工具"
+                    enabled: root.canSavePreset || root.steps.length > 0
+                    placeholderText: "预设名称"
                     maximumLength: 40
                 }
                 Button {
@@ -461,6 +525,16 @@ ApplicationWindow {
                     onClicked: {
                         const error = backend.savePreset(presetName.text, root.selected.id, root.params, root.inputs)
                         presetManager.notice = error || "已保存预设"
+                        if (!error)
+                            presetName.clear()
+                    }
+                }
+                Button {
+                    text: "保存当前工作流"
+                    enabled: root.steps.length > 0 && presetName.text.trim() !== ""
+                    onClicked: {
+                        const error = backend.saveWorkflowPreset(presetName.text, root.steps, root.inputs)
+                        presetManager.notice = error || "已保存工作流预设"
                         if (!error)
                             presetName.clear()
                     }
@@ -627,7 +701,7 @@ ApplicationWindow {
                                 Layout.preferredWidth: 75
                             }
                             GlassButton { text: "重试"; visible: modelData.canRetry === true; onClicked: backend.retry(index) }
-                            GlassButton { text: modelData.directory?"打开":"取消"; visible: !!modelData.directory||modelData.state==="运行中"||modelData.state==="等待"; onClicked: modelData.directory?backend.openFolder(modelData.directory):backend.cancel(index) }
+                            GlassButton { text: modelData.directory?"查看结果":"取消"; visible: !!modelData.directory||modelData.state==="运行中"||modelData.state==="等待"; onClicked: modelData.directory?taskResults.showJob(index, modelData.directory):backend.cancel(index) }
                         }
                         ScrollBar.vertical: ScrollBar {}
                     }
@@ -647,19 +721,49 @@ ApplicationWindow {
                     }
                     RowLayout { Label { text: "输入文件 ("+root.inputs.length+")"; color: root.ink; font.bold: true } Item { Layout.fillWidth: true } GlassButton { text: "清空"; onClicked: root.inputs=[] } }
                     ListView { Layout.fillWidth: true; Layout.preferredHeight: Math.min(100,root.inputs.length*30); clip: true; model: root.inputs
-                        delegate: RowLayout { required property string modelData; required property int index; width: ListView.view.width; Label { text: modelData; Layout.fillWidth: true; color: root.muted; elide: Text.ElideMiddle; ToolTip.visible: h.hovered; ToolTip.text: modelData; HoverHandler{id:h} } GlassButton { compact: true; text:"×"; onClicked:{let a=root.inputs.slice();a.splice(index,1);root.inputs=a} } }
+                        delegate: RowLayout {
+                            required property string modelData
+                            required property int index
+                            width: ListView.view.width
+                            readonly property bool manualOrder: root.selected !== null && root.selected.id === "file.rename"
+                            Label { text: modelData; textFormat: Text.PlainText; Layout.fillWidth: true; color: root.muted; elide: Text.ElideMiddle; ToolTip.visible: h.hovered; ToolTip.text: modelData; HoverHandler{id:h} }
+                            GlassButton { compact: true; text: "↑"; Accessible.name: "上移文件"; visible: manualOrder; enabled: index > 0; onClicked: root.moveInput(index, index - 1) }
+                            GlassButton { compact: true; text: "↓"; Accessible.name: "下移文件"; visible: manualOrder; enabled: index + 1 < root.inputs.length; onClicked: root.moveInput(index, index + 1) }
+                            GlassButton { compact: true; text:"×"; onClicked:{let a=root.inputs.slice();a.splice(index,1);root.inputs=a} }
+                        }
                     }
-                    Repeater { model: root.selected?root.selected.params:[]; delegate: ColumnLayout { required property var modelData; Layout.fillWidth: true
+                    Repeater { model: root.editableParameters; delegate: ColumnLayout { required property var modelData; Layout.fillWidth: true
                         Label { text: modelData.label; color: root.ink; Layout.fillWidth: true; wrapMode: Text.Wrap }
                         Loader { Layout.fillWidth: true; sourceComponent: modelData.kind==="choice"?combo:modelData.kind==="bool"?check:field
-                            Component { id: combo; ComboBox { model: modelData.choices; currentIndex: Math.max(0,model.indexOf(root.params[modelData.key])); onActivated: root.setParam(modelData.key,currentText) } }
+                            Component { id: combo; ComboBox {
+                                readonly property var values: modelData.choices
+                                model: modelData.key === "mode" && root.selected.id === "file.rename" ?
+                                       ["编号", "替换文字", "按拍摄日期"] : values
+                                currentIndex: Math.max(0, values.indexOf(root.params[modelData.key]))
+                                onActivated: root.setParam(modelData.key, values[currentIndex])
+                            } }
                             Component { id: check; CheckBox { checked: String(root.params[modelData.key])==="true"; onToggled: root.setParam(modelData.key,checked?"true":"false") } }
                             Component { id: field; TextField { text: String(root.params[modelData.key]??""); echoMode: modelData.kind==="password"?TextInput.Password:TextInput.Normal; onTextEdited: root.setParam(modelData.key,text) } }
                         }
                     }}
                     Label { text: "输出目录"; color: root.ink; font.bold: true }
                     RowLayout { Layout.fillWidth: true; TextField { id: output; objectName: "outputDirectory"; text: backend.outputDefault; Layout.fillWidth: true } GlassButton { compact: true; text:"…"; onClicked: outputFolder.open() } }
-                    GlassButton { text: "加入任务队列"; primary: true; centered: true; Layout.fillWidth: true; enabled: root.selectedReady && root.inputCountValid && output.text.trim().length > 0; onClicked: {root.workflowNotice="";backend.submit(root.selected.id,root.inputs,root.params,output.text);if(root.selected.params.some(p=>p.kind==="password")){for(let p of root.selected.params)if(p.kind==="password")root.setParam(p.key,"")}} }
+                    GlassButton {
+                        text: root.selected && root.selected.id === "file.rename" ? "预览重命名" : "加入任务队列"
+                        primary: true; centered: true; Layout.fillWidth: true
+                        enabled: root.selectedReady && root.inputCountValid && output.text.trim().length > 0
+                        onClicked: {
+                            root.workflowNotice = ""
+                            if (root.selected.id === "file.rename") {
+                                root.openRenamePreview()
+                                return
+                            }
+                            backend.submit(root.selected.id, root.inputs, root.params, output.text)
+                            for (const parameter of root.selected.params)
+                                if (parameter.kind === "password")
+                                    root.setParam(parameter.key, "")
+                        }
+                    }
                     GlassButton { text: "添加到工作流"; Layout.fillWidth: true; enabled: root.canAddStep; onClicked: root.addStep()
                         ToolTip.visible: hovered && root.selected !== null && !root.canAddStep && root.steps.length < 32
                         ToolTip.text: "密码工具无法保存到工作流"

@@ -32,6 +32,11 @@ public:
  Q_INVOKABLE QString savePreset(QString name, const QString &tool, const QVariantMap &params,
                                 const QVariantList &inputs);
  Q_INVOKABLE QString removePreset(const QString &name);
+ Q_INVOKABLE QString saveWorkflowPreset(QString name, const QVariantList &steps, const QVariantList &inputs);
+ Q_INVOKABLE QVariantList resultItems(int index) const;
+ Q_INVOKABLE QVariantList useResults(int index, const QVariantList &paths) const;
+ Q_INVOKABLE bool openResult(int index, const QString &path);
+ Q_INVOKABLE void previewRename(const QVariantList &inputs, const QVariantMap &params);
  Q_INVOKABLE void reload();
  Q_INVOKABLE QString localPath(const QUrl &url) const;
  Q_INVOKABLE QStringList inputSuffixes(const QVariantList &paths) const;
@@ -57,10 +62,13 @@ signals:
  void enginesChecked(QVariantMap results, QString message);
  void pdfPreviewReady(QVariantList pages, QString error);
  void pdfCompressionReady(QVariantMap preview, QString error);
+ void renamePreviewReady(QVariantList rows, QString plan, QString error);
 private:
  struct Request {int index; QJsonObject json;};
  QVariantList m_tools,m_jobs; QString m_status; QProcess catalogue,worker; QByteArray buffer; QQueue<Request> pending; int active=-1;
  QVariantList m_presets;
+ QString storePreset(QString name, QVariantMap preset, const QVariantList &inputs);
+ QString presetParameters(const QString &tool, const QVariantMap &params, QVariantMap &values) const;
  QString writePresets(const QVariantList &presets);
  std::unique_ptr<QTemporaryDir> temp;
  QJsonObject activeRequest, outcome;
@@ -77,6 +85,7 @@ private:
  std::unique_ptr<QTemporaryDir> previewRoot;
  std::unique_ptr<QTemporaryDir> previewBatch;
  std::unique_ptr<QTemporaryDir> compressionPreview;
+ QVariantMap compressionDetails;
  void startInspection(const QString &command, int timeout, const QVariantMap *overrides = nullptr);
  void finishInspection(bool exited);
  void finishJob(QVariantMap values);

@@ -13,6 +13,7 @@
 #include <QQuickStyle>
 #include <QSettings>
 #include <QTimer>
+#include <functional>
 #include "controller.h"
 
 static bool invokeQml(QJSValue object, const char *method, const QJSValueList &arguments = {})
@@ -31,6 +32,90 @@ static QFileInfo lastOutput(const Controller &controller, const QString &name)
     if (job.value("state").toString() != QStringLiteral("完成"))
         return {};
     return QFileInfo(QDir(job.value("directory").toString()).filePath(name));
+}
+
+static bool runTask(Controller &controller, const std::function<bool()> &start)
+{
+    const auto count = controller.jobs().size();
+    QEventLoop wait;
+    QObject::connect(&controller, &Controller::jobsChanged, &wait, [&] {
+        if (!controller.busy()) wait.quit();
+    });
+    QTimer::singleShot(8000, &wait, &QEventLoop::quit);
+    if (!start())
+        return false;
+    if (controller.busy())
+        wait.exec();
+    return !controller.busy() && controller.jobs().size() == count + 1 &&
+           controller.jobs().constLast().toMap().value("state") == QStringLiteral("完成");
+}
+
+static bool verifyFileTools(QQmlApplicationEngine &engine, QObject *root, Controller &controller,
+                            const QString &source, const QDir &directory)
+{
+    auto window = engine.newQObject(root);
+    const auto jobIndex = controller.jobs().size() - 1;
+    const auto job = controller.jobs().at(jobIndex).toMap();
+    const auto files = controller.resultItems(jobIndex);
+    if (files.size() != 1) {
+        qWarning("Compression result list does not contain one item.");
+        return false;
+    }
+    const auto item = files.first().toMap();
+    const auto path = item.value("path").toString();
+    if (!item.value("canOpen").toBool() || item.value("original_bytes").toLongLong() != QFileInfo(source).size() ||
+        item.value("target_bytes").toLongLong() != 97 * 1024 || !controller.useResults(jobIndex, {source}).isEmpty()) {
+        qWarning("Compression result metadata or path validation failed.");
+        return false;
+    }
+
+    auto results = engine.newQObject(root->findChild<QObject *>("taskResults"));
+    if (!invokeQml(results, "showJob", {QJSValue(int(jobIndex)), QJSValue(job.value("directory").toString())}) ||
+        !invokeQml(results, "choose", {QJSValue(path), QJSValue(true)}) ||
+        !invokeQml(results, "useSelected") ||
+        window.property("inputs").toVariant().toList() != QVariantList{path}) {
+        qWarning("Task results could not be reused as input.");
+        return false;
+    }
+
+    const QVariantList workflow = {
+        QVariantMap{{"tool", "image.resize"}, {"params", QVariantMap{{"width", "160"}, {"height", "160"}}}},
+        QVariantMap{{"tool", "image.compress"}, {"params", QVariantMap{{"target_kib", "97"}}}},
+        QVariantMap{{"tool", "pdf.from_images"}, {"params", QVariantMap{}}},
+    };
+    const auto name = QStringLiteral("测试图片工作流");
+    if (!controller.saveWorkflowPreset(name, workflow, {path}).isEmpty() ||
+        controller.saveWorkflowPreset(name, workflow, {path}).isEmpty())
+        return false;
+    const auto saved = QSettings().value("tools/presets").toList();
+    if (saved.size() != 1 || saved.first().toMap().value("steps").toList().size() != 3)
+        return false;
+    if (!runTask(controller, [&] {
+        return invokeQml(window, "runPreset", {engine.toScriptValue(saved.first())});
+    }) || !lastOutput(controller, "03/images.pdf").isFile() || !controller.removePreset(name).isEmpty()) {
+        qWarning("Saved three-step workflow did not finish with a PDF.");
+        return false;
+    }
+
+    auto rename = engine.newQObject(root->findChild<QObject *>("renamePreview"));
+    QEventLoop wait;
+    QObject::connect(&controller, &Controller::renamePreviewReady, &wait, &QEventLoop::quit);
+    QTimer::singleShot(8000, &wait, &QEventLoop::quit);
+    if (!invokeQml(rename, "showPreview", {engine.toScriptValue(QVariantList{path, source}),
+                   engine.toScriptValue(QVariantMap{{"prefix", "new-"}, {"start", "8"}, {"digits", "2"}}),
+                   QJSValue(directory.filePath("rename"))}))
+        return false;
+    if (controller.inspecting())
+        wait.exec();
+    const auto rows = rename.property("rows").toVariant().toList();
+    if (!rename.property("applicable").toBool() || rows.size() != 2 ||
+        rows.first().toMap().value("name") != "new-08.jpg" || rows.last().toMap().value("name") != "new-09.png") {
+        qWarning("Rename preview did not preserve the supplied order.");
+        return false;
+    }
+    return runTask(controller, [&] { return invokeQml(rename, "submitPreview"); }) &&
+           lastOutput(controller, "new-08.jpg").isFile() && lastOutput(controller, "new-09.png").isFile() &&
+           QFileInfo(source).isFile() && QFileInfo(path).isFile();
 }
 
 static bool verifyWorkbench(QQmlApplicationEngine &engine, QObject *root, Controller &controller)
@@ -139,7 +224,8 @@ static bool verifyWorkbench(QQmlApplicationEngine &engine, QObject *root, Contro
         presetWait.exec();
     const auto outputs = QDir(controller.jobs().constLast().toMap().value("directory").toString())
                              .entryInfoList({"*.jpg"}, QDir::Files);
-    return outputs.size() == 1 && outputs.first().size() > 0 && outputs.first().size() <= 100000;
+    return outputs.size() == 1 && outputs.first().size() > 0 && outputs.first().size() <= 100000 &&
+           verifyFileTools(engine, root, controller, imagePath, QDir(files.path()));
 }
 
 static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controller &controller)
@@ -178,7 +264,7 @@ static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controll
         QVariantList{QStringLiteral("one.txt"), QStringLiteral("two.txt")}));
     const bool ready = window.property("workflowReady").toBool() && verifyWorkbench(engine, root, controller);
     if (ready)
-        qInfo("Desktop checks passed: task controls, PDF preview and export, size comparison, and quick presets.");
+        qInfo("Desktop checks passed: PDF export, task results, rename preview, and multi-step presets.");
     return ready;
 }
 
@@ -192,7 +278,19 @@ int main(int argc, char **argv)
     app.setWindowIcon(QIcon(QStringLiteral(":/branding/formabox.png")));
     QQuickStyle::setStyle("Fusion");
 
-    const bool verify = app.arguments().contains("--verify-runtime");
+    const auto arguments = app.arguments();
+    const auto sendTo = arguments.indexOf("--send-to");
+    const auto options = sendTo < 0 ? arguments : arguments.first(sendTo);
+    const bool verify = options.contains("--verify-runtime");
+    QVariantList launchedFiles;
+    if (sendTo >= 0) {
+        for (const auto &path : arguments.sliced(sendTo + 1)) {
+            const QFileInfo file(path);
+            if (file.isAbsolute() && (file.isFile() || file.isDir()) && !file.isSymLink() &&
+                !launchedFiles.contains(file.absoluteFilePath()))
+                launchedFiles.append(file.absoluteFilePath());
+        }
+    }
     std::unique_ptr<QTemporaryDir> verificationSettings;
     if (verify) {
         verificationSettings = std::make_unique<QTemporaryDir>();
@@ -204,6 +302,7 @@ int main(int argc, char **argv)
     Controller controller;
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("backend", &controller);
+    engine.rootContext()->setContextProperty("launchFiles", launchedFiles);
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed,
                      &app, [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
     engine.loadFromModule("FormaBox", "Main");
@@ -214,14 +313,18 @@ int main(int argc, char **argv)
             if (verificationStarted || engine.rootObjects().isEmpty() || controller.tools().isEmpty())
                 return;
             verificationStarted = true;
-            const bool passed = verifyDesktop(engine, engine.rootObjects().constFirst(), controller);
+            auto *root = engine.rootObjects().constFirst();
+            const bool launchPassed = sendTo < 0 ||
+                (launchedFiles.size() == arguments.size() - sendTo - 1 &&
+                 engine.newQObject(root).property("inputs").toVariant().toList() == launchedFiles);
+            const bool passed = launchPassed && verifyDesktop(engine, root, controller);
             if (!passed)
                 qWarning("Desktop regression checks failed.");
             app.exit(passed ? 0 : 3);
         };
         QObject::connect(&controller, &Controller::toolsChanged, &app, exitWhenReady);
         QTimer::singleShot(0, &app, exitWhenReady);
-        QTimer::singleShot(30'000, &app, [&] { app.exit(2); });
+        QTimer::singleShot(45'000, &app, [&] { app.exit(2); });
     }
     return app.exec();
 }

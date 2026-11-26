@@ -148,6 +148,7 @@ def compress_target(ctx, inputs, params):
         if size > limit:
             raise ValueError(f'{path.name}：试压后为 {size / 1024:.1f} KiB，未达到 {limit / 1024:.0f} KiB。'
                              '可在 PDF 页面工作台预览并保存试压结果。')
+        ctx.result_details[destination] = dict(original_bytes=extended_path(path).stat().st_size, target_bytes=limit)
         outputs.append(destination)
     return outputs
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 import hashlib, json, os, re, shutil, stat, subprocess, tempfile, time, uuid
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 TOOLS = {}
 class Cancelled(Exception): pass
@@ -130,6 +130,7 @@ class Context:
     root: Path
     cancel: Path | None = None
     progress: object = emit
+    result_details: dict = field(default_factory=dict)
     def check(self):
         if self.cancel and self.cancel.exists(): raise Cancelled('任务已取消')
     def tick(self, current, total, message=''):
@@ -274,9 +275,13 @@ def execute(req,progress=emit):
             ctx=Context(staging,cancel,progress)
             results=invoke(req['tool'],inputs,req.get('params',{}),ctx)
         relative=[str(p.relative_to(staging)) for p in results]
+        details = [ctx.result_details.get(path, {}) for path in results]
         if cancel and cancel.exists(): raise Cancelled('任务已取消')
         if final.exists(): raise FileExistsError(str(final))
         staging.rename(final)
-        return dict(directory=output_path(final),files=[output_path(final/p) for p in relative])
+        result = dict(directory=output_path(final),files=[output_path(final/p) for p in relative])
+        if any(details):
+            result['details'] = details
+        return result
     finally:
         if staging.exists(): shutil.rmtree(staging,ignore_errors=True)

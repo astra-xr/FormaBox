@@ -1,5 +1,8 @@
 from .core import *
+from collections import Counter
+from datetime import datetime
 import zipfile, stat, mimetypes
+from PIL import Image
 
 @tool('file.hash','文件','文件哈希校验',[param('algorithm','算法','sha256','choice',['sha256','sha512','sha1','md5']),param('expected','预期值（单文件，可空）','')])
 def hashes(ctx,inputs,p):
@@ -19,12 +22,92 @@ def duplicates(ctx,inputs,p):
             for f in fs: ctx.check(); groups.setdefault(digest(f,ctx=ctx),[]).append(output_path(f))
     return report(ctx,'duplicates.json',[dict(sha256=h,files=fs) for h,fs in groups.items() if len(fs)>1])
 
-@tool('file.rename','文件','批量重命名（复制）',[param('prefix','前缀','file-'),param('start','起始序号','1','number'),param('digits','序号位数','4','number'),param('keep_name','保留原文件名','false','bool')])
-def rename(ctx,inputs,p):
-    start=integer(p,'start',0,10**9); digits=integer(p,'digits',1,12); out=[]; fs=list(regular_files(inputs,ctx))
-    for i,f in enumerate(fs):
-        ctx.tick(i,len(fs),f.name); name=str(p['prefix'])+str(i+start).zfill(digits)+('-'+f.stem if truth(p['keep_name']) else '')+f.suffix; dest=ctx.path(name); copy_file(ctx,f,dest); out.append(dest)
-    return out
+def photo_date(path):
+    with Image.open(path) as image:
+        exif = image.getexif()
+        value = exif.get_ifd(34665).get(36867) or exif.get(36867)
+    return datetime.strptime(str(value), '%Y:%m:%d %H:%M:%S').strftime('%Y-%m-%d')
+
+
+def rename_rows(ctx, inputs, params):
+    mode = choice(params, 'mode', ('number', 'replace', 'photo_date'))
+    start = integer(params, 'start', 0, 10**9) if mode == 'number' else 0
+    digits = integer(params, 'digits', 1, 12) if mode == 'number' else 1
+    find = str(params['find'])
+    if mode == 'replace' and not find:
+        raise ValueError('请输入要替换的文字')
+    rows = []
+    for index, path in enumerate(regular_files(inputs, ctx)):
+        name, error = '', ''
+        try:
+            if mode == 'number':
+                stem = str(params['prefix']) + str(index + start).zfill(digits)
+                if truth(params['keep_name']):
+                    stem += '-' + path.stem
+            elif mode == 'replace':
+                stem = path.stem.replace(find, str(params['replacement']))
+            else:
+                try:
+                    stem = photo_date(path) + '-' + path.stem
+                except (OSError, ValueError, TypeError, SyntaxError):
+                    raise ValueError('没有有效的 EXIF 拍摄日期') from None
+            if not stem.strip():
+                raise ValueError('新文件名不能为空')
+            name = safe_name(stem + path.suffix)
+            if len(name.encode('utf-16-le')) > 510:
+                raise ValueError('新文件名过长')
+        except ValueError as exc:
+            error = str(exc)
+        rows.append(dict(source=output_path(path), old=path.name, name=name, error=error))
+    if not rows:
+        raise ValueError('没有可重命名的普通文件')
+    used = Counter(row['name'].casefold() for row in rows if not row['error'])
+    for row in rows:
+        if not row['error'] and used[row['name'].casefold()] > 1:
+            row['error'] = '新文件名重复（不区分大小写）'
+    return rows
+
+
+def rename_fingerprint(rows):
+    pairs = [(row['source'], row['name']) for row in rows]
+    return hashlib.sha256(json.dumps(pairs).encode('utf-8')).hexdigest()
+
+
+def preview_rename(request):
+    values = request.get('inputs')
+    params = request.get('params', {})
+    if not isinstance(values, list) or not values or not isinstance(params, dict):
+        raise ValueError('请选择待重命名的文件')
+    spec = TOOLS['file.rename'][0]['params']
+    options = {param['key']: param['default'] for param in spec}
+    if params.keys() - options.keys():
+        raise ValueError('未知的重命名参数')
+    options.update(params)
+    rows = rename_rows(None, [checked_path(value) for value in values], options)
+    return dict(rows=rows, plan=rename_fingerprint(rows))
+
+
+@tool('file.rename', '文件', '批量重命名（复制）', [
+    param('mode', '模式', 'number', 'choice', ['number', 'replace', 'photo_date']),
+    param('prefix', '前缀', 'file-'), param('start', '起始序号', '1', 'number'),
+    param('digits', '序号位数', '4', 'number'), param('keep_name', '保留原文件名', 'false', 'bool'),
+    param('find', '搜索文字'), param('replacement', '替换为（可空）'),
+    param('expected_plan', '预览校验值', '', 'internal')],
+    description='支持编号、文字替换或 EXIF 拍摄日期，输出独立的副本。')
+def rename(ctx, inputs, params):
+    rows = rename_rows(ctx, inputs, params)
+    for row in rows:
+        if row['error']:
+            raise ValueError(f"{row['old']}：{row['error']}")
+    if params['expected_plan'] and params['expected_plan'] != rename_fingerprint(rows):
+        raise ValueError('文件或顺序已变化，请重新预览')
+    outputs = []
+    for index, row in enumerate(rows):
+        ctx.tick(index, len(rows), row['old'])
+        destination = ctx.path(row['name'])
+        copy_file(ctx, extended_path(Path(row['source'])), destination)
+        outputs.append(destination)
+    return outputs
 
 @tool('file.large','文件','大文件查找',[param('limit_mib','最小 MiB','100','number')])
 def large(ctx,inputs,p):

@@ -69,7 +69,10 @@ def compress(ctx,inputs,p):
                 im=im.resize((max(1,int(im.width*.8)),max(1,int(im.height*.8))),Image.Resampling.LANCZOS); data=encode(im,fmt,q)
                 if len(data)<=target: break
             if len(data)>target: raise ValueError(f'{f.name}: 无法达到指定大小')
-        out=ctx.path(f'{i+1:04d}-{f.stem}.{ext}'); out.write_bytes(data); return out
+        out = ctx.path(f'{i+1:04d}-{f.stem}.{ext}')
+        out.write_bytes(data)
+        ctx.result_details[out] = dict(original_bytes=f.stat().st_size, target_bytes=target)
+        return out
     return each(ctx,inputs,one)
 
 @tool('image.resize','图片','图片缩放',[param('width','最大宽度','1920','number'),param('height','最大高度','1080','number'),param('keep_ratio','保持比例','true','bool')])

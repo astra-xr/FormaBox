@@ -19,6 +19,36 @@
 namespace {
 constexpr const char *engineNames[] = {"LibreOffice", "ffmpeg", "tesseract"};
 constexpr const char *engineVariables[] = {"FORMABOX_SOFFICE", "FORMABOX_FFMPEG", "FORMABOX_TESSERACT"};
+
+bool isTaskOutput(const QFileInfo &directory, const QFileInfo &file) {
+ if (!directory.isDir() || !directory.isAbsolute() || !file.isAbsolute() || file.isSymLink() ||
+     !(file.isFile() || file.isDir()))
+  return false;
+ const auto root = directory.canonicalFilePath();
+ const auto path = file.canonicalFilePath();
+ if (root.isEmpty() || path.isEmpty() || path == root) return false;
+ const auto relative = QDir(root).relativeFilePath(path);
+ return relative != ".." && !relative.startsWith("../") && !QDir::isAbsolutePath(relative);
+}
+
+bool canOpenResult(const QFileInfo &file) {
+ const auto suffix = file.suffix().toLower();
+ static const QStringList formats = {"pdf", "png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff", "avif",
+     "ico", "docx", "xlsx", "pptx", "rtf", "txt", "json", "csv", "zip", "mp4", "mkv", "webm",
+     "mov", "avi", "mp3", "wav", "flac", "ogg", "m4a", "aac", "opus"};
+ return file.isDir() || formats.contains(suffix);
+}
+
+QVariantMap resultRow(const QFileInfo &file, const QVariantMap &details = {}) {
+ QVariantMap row = {{"path", file.filePath()}, {"name", file.fileName()}, {"bytes", file.isDir() ? -1LL : file.size()},
+                    {"folder", file.isDir()}};
+ for (const auto *key : {"original_bytes", "target_bytes"}) {
+  bool valid = false;
+  const auto size = details.value(key).toLongLong(&valid);
+  if (valid && size >= 0) row.insert(key, size);
+ }
+ return row;
+}
 }
 
 Controller::Controller(QObject *parent):QObject(parent){
@@ -108,11 +138,7 @@ QStringList Controller::inputSuffixes(const QVariantList &paths) const {
  return suffixes;
 }
 
-QString Controller::savePreset(QString name, const QString &tool, const QVariantMap &params,
-                               const QVariantList &inputs) {
- name = name.trimmed();
- if (name.isEmpty() || name.size() > 40)
-  return QStringLiteral("请输入 1–40 个字符的预设名称");
+QString Controller::presetParameters(const QString &tool, const QVariantMap &params, QVariantMap &values) const {
  if (tool == "pdf.compose")
   return QStringLiteral("页面布局无法保存为工具预设");
  const auto found = std::find_if(m_tools.cbegin(), m_tools.cend(), [&tool](const QVariant &item) {
@@ -120,17 +146,48 @@ QString Controller::savePreset(QString name, const QString &tool, const QVariant
  });
  if (found == m_tools.cend())
   return QStringLiteral("工具不可用");
- QVariantMap values;
  for (const auto &item : found->toMap().value("params").toList()) {
   const auto spec = item.toMap();
   const auto key = spec.value("key").toString();
   if (spec.value("kind").toString() == "password")
    return QStringLiteral("含密码的工具不能保存预设");
+  if (spec.value("kind").toString() == "internal")
+   continue;
   const auto value = params.value(key, spec.value("default")).toString();
   if (value.size() > 4096)
    return QStringLiteral("预设参数太长");
   values.insert(key, value);
  }
+ return {};
+}
+
+QString Controller::savePreset(QString name, const QString &tool, const QVariantMap &params,
+                               const QVariantList &inputs) {
+ QVariantMap values;
+ const auto error = presetParameters(tool, params, values);
+ if (!error.isEmpty()) return error;
+ return storePreset(name, {{"tool", tool}, {"params", values}}, inputs);
+}
+
+QString Controller::saveWorkflowPreset(QString name, const QVariantList &steps, const QVariantList &inputs) {
+ if (steps.isEmpty() || steps.size() > 32)
+  return QStringLiteral("工作流需要 1–32 个步骤");
+ QVariantList saved;
+ for (const auto &item : steps) {
+  const auto step = item.toMap();
+  const auto tool = step.value("tool").toString();
+  QVariantMap values;
+  const auto error = presetParameters(tool, step.value("params").toMap(), values);
+  if (!error.isEmpty()) return error;
+  saved.append(QVariantMap{{"tool", tool}, {"params", values}});
+ }
+ return storePreset(name, {{"steps", saved}}, inputs);
+}
+
+QString Controller::storePreset(QString name, QVariantMap preset, const QVariantList &inputs) {
+ name = name.trimmed();
+ if (name.isEmpty() || name.size() > 40)
+  return QStringLiteral("请输入 1–40 个字符的预设名称");
  auto next = m_presets;
  if (next.size() >= 24)
   return QStringLiteral("最多保存 24 个自定义预设");
@@ -140,7 +197,9 @@ QString Controller::savePreset(QString name, const QString &tool, const QVariant
  auto suffixes = inputSuffixes(inputs);
  suffixes.removeAll(QString());
  suffixes.removeDuplicates();
- next.append(QVariantMap{{"name", name}, {"tool", tool}, {"params", values}, {"suffixes", suffixes}});
+ preset.insert("name", name);
+ preset.insert("suffixes", suffixes);
+ next.append(preset);
  return writePresets(next);
 }
 
@@ -164,6 +223,40 @@ QString Controller::writePresets(const QVariantList &presets) {
  m_presets = presets;
  emit presetsChanged();
  return {};
+}
+
+QVariantList Controller::resultItems(int index) const {
+ if (index < 0 || index >= m_jobs.size()) return {};
+ const auto job = m_jobs.at(index).toMap();
+ const QFileInfo directory(job.value("directory").toString());
+ QVariantList items;
+ for (const auto &value : job.value("outputs").toList()) {
+  auto item = value.toMap();
+  const QFileInfo file(item.value("path").toString());
+  const bool available = isTaskOutput(directory, file);
+  item.insert("available", available);
+  item.insert("canOpen", available && canOpenResult(file));
+  items.append(item);
+ }
+ return items;
+}
+
+QVariantList Controller::useResults(int index, const QVariantList &paths) const {
+ const auto available = resultItems(index);
+ QVariantList selected;
+ for (const auto &value : available) {
+  const auto item = value.toMap();
+  if (item.value("available").toBool() && paths.contains(item.value("path")))
+   selected.append(item.value("path"));
+ }
+ return selected;
+}
+
+bool Controller::openResult(int index, const QString &path) {
+ if (useResults(index, {path}).isEmpty()) return false;
+ const QFileInfo file(path);
+ if (!canOpenResult(file)) return false;
+ return QDesktopServices::openUrl(QUrl::fromLocalFile(path));
 }
 
 QVariantMap Controller::enginePaths() const {
@@ -217,6 +310,12 @@ void Controller::clearPdfPreview() {
  if (!inspecting()) previewRoot.reset();
 }
 
+void Controller::previewRename(const QVariantList &inputs, const QVariantMap &params) {
+ if (inspecting()) return;
+ inspectionRequest = QJsonObject::fromVariantMap({{"inputs", inputs}, {"params", params}});
+ startInspection("preview-rename", 60000);
+}
+
 void Controller::previewPdfCompression(const QVariantList &inputs, const QString &pages, int targetKiB, int page) {
  if (inspecting()) return;
  compressionPreview = std::make_unique<QTemporaryDir>();
@@ -232,8 +331,10 @@ void Controller::previewPdfCompression(const QVariantList &inputs, const QString
 }
 
 void Controller::clearPdfCompression() {
- if (inspectionCommand != "preview-pdf-compression")
+ if (inspectionCommand != "preview-pdf-compression") {
   compressionPreview.reset();
+  compressionDetails.clear();
+ }
 }
 
 QString Controller::savePdfCompression(const QString &output) {
@@ -262,7 +363,8 @@ QString Controller::savePdfCompression(const QString &output) {
  m_jobs.append(QVariantMap{{"title", QStringLiteral("PDF 页面工作台")},
                           {"state", QStringLiteral("完成")}, {"progress", 1.0},
                           {"message", QStringLiteral("已保存预览 · %1 KiB").arg(preview.size() / 1024.0, 0, 'f', 1)},
-                          {"directory", result.path()}});
+                          {"directory", result.path()},
+                          {"outputs", QVariantList{resultRow(QFileInfo(result.filePath("workbench.pdf")), compressionDetails)}}});
  saveHistory();
  emit jobsChanged();
  return {};
@@ -292,6 +394,7 @@ void Controller::finishInspection(bool exited) {
 
  const bool pdf = inspectionCommand == "preview-pdf";
  const bool compression = inspectionCommand == "preview-pdf-compression";
+ const bool rename = inspectionCommand == "preview-rename";
  QVariantList pages;
  QVariantMap checks;
  if (pdf) {
@@ -330,9 +433,14 @@ void Controller::finishInspection(bool exited) {
   if (error.isEmpty()) {
    checks.insert("before", QUrl::fromLocalFile(before));
    checks.insert("after", QUrl::fromLocalFile(after));
+   compressionDetails = {{"original_bytes", checks.value("original")}, {"target_bytes", checks.value("target")}};
   } else {
    compressionPreview.reset();
   }
+ } else if (rename) {
+  checks = result.toObject().toVariantMap();
+  if (error.isEmpty() && (checks.value("rows").toList().isEmpty() || checks.value("plan").toString().size() != 64))
+   error = QStringLiteral("改名预览结果无效");
  } else {
   checks = result.toObject().toVariantMap();
   if (error.isEmpty() && saveEngines) {
@@ -364,6 +472,8 @@ void Controller::finishInspection(bool exited) {
   emit pdfPreviewReady(pages, error);
  else if (compression)
   emit pdfCompressionReady(checks, error);
+ else if (rename)
+  emit renamePreviewReady(checks.value("rows").toList(), checks.value("plan").toString(), error);
  else
   emit enginesChecked(checks, error);
 }
@@ -420,14 +530,17 @@ void Controller::finalize(int code,QProcess::ExitStatus exitStatus){
    const QFileInfo directory(outcome.value("directory").toString());
    const auto files=outcome.value("files").toArray();
    bool valid=directory.isDir()&&directory.isAbsolute()&&!files.isEmpty();
-   const QDir canonical(directory.canonicalFilePath());
-   for(const auto &entry:files){
-    const QFileInfo file(entry.toString());
-    const auto relative=canonical.relativeFilePath(file.canonicalFilePath());
-    valid=valid&&file.exists()&&file.isAbsolute()&&relative!=".."&&!relative.startsWith("../")&&!QDir::isAbsolutePath(relative);
+   const auto details = outcome.value("details").toArray();
+   QVariantList outputs;
+   for (qsizetype index = 0; valid && index < files.size(); ++index) {
+    const QFileInfo file(files.at(index).toString());
+    valid = isTaskOutput(directory, file);
+    if (valid)
+     outputs.append(resultRow(file, index < details.size() ? details.at(index).toObject().toVariantMap() : QVariantMap{}));
    }
    if(valid){
-    finishJob({{"state","完成"},{"progress",1.0},{"directory",directory.absoluteFilePath()},{"message",QStringLiteral("输出 %1 项").arg(files.size())}});
+    finishJob({{"state","完成"},{"progress",1.0},{"directory",directory.absoluteFilePath()},
+               {"message",QStringLiteral("输出 %1 项").arg(files.size())},{"outputs",outputs}});
     return;
    }
    finishJob({{"state","失败"},{"message","工作进程返回的结果文件无效"}});

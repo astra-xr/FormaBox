@@ -865,6 +865,17 @@
     "label": "批量重命名（复制）",
     "params": [
       {
+        "key": "mode",
+        "label": "模式",
+        "default": "number",
+        "kind": "choice",
+        "choices": [
+          "number",
+          "replace",
+          "photo_date"
+        ]
+      },
+      {
         "key": "prefix",
         "label": "前缀",
         "default": "file-",
@@ -891,11 +902,32 @@
         "default": "false",
         "kind": "bool",
         "choices": []
+      },
+      {
+        "key": "find",
+        "label": "搜索文字",
+        "default": "",
+        "kind": "text",
+        "choices": []
+      },
+      {
+        "key": "replacement",
+        "label": "替换为（可空）",
+        "default": "",
+        "kind": "text",
+        "choices": []
+      },
+      {
+        "key": "expected_plan",
+        "label": "预览校验值",
+        "default": "",
+        "kind": "internal",
+        "choices": []
       }
     ],
     "minimum": 1,
     "maximum": 0,
-    "description": "",
+    "description": "支持编号、文字替换或 EXIF 拍摄日期，输出独立的副本。",
     "engines": []
   },
   {

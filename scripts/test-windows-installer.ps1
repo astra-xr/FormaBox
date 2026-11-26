@@ -18,11 +18,12 @@ $target = Join-Path $testRoot '万象 安装'
 $uninstaller = Join-Path $target 'Uninstall.exe'
 $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) '万象.lnk'
 $desktopShortcut = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) '万象.lnk'
+$sendToShortcut = Join-Path ([Environment]::GetFolderPath('SendTo')) '万象（FormaBox）.lnk'
 
 try {
     Invoke-CheckedProcess $setupPath "/S /D=$target"
     if (!(Test-Path -LiteralPath $uninstaller) -or !(Test-Path -LiteralPath $shortcut) -or
-        !(Test-Path -LiteralPath $desktopShortcut) -or
+        !(Test-Path -LiteralPath $desktopShortcut) -or !(Test-Path -LiteralPath $sendToShortcut) -or
         (Get-ItemProperty -LiteralPath $registry).InstallLocation -ne $target) {
         throw 'Installation files, shortcuts, or uninstall registration are missing'
     }
@@ -34,7 +35,17 @@ try {
     $env:QT_QUICK_BACKEND = 'software'
     $env:PYTHONUTF8 = '1'
 
-    Invoke-CheckedProcess (Join-Path $target 'FormaBox.exe') '--verify-runtime'
+    $sendTo = (New-Object -ComObject WScript.Shell).CreateShortcut($sendToShortcut)
+    $application = Join-Path $target 'FormaBox.exe'
+    if ($sendTo.TargetPath -ne $application -or $sendTo.Arguments -ne '--send-to') {
+        throw 'Send To shortcut target or arguments are incorrect'
+    }
+    $sentFiles = @('发送样本 甲.txt', '发送样本 乙.txt') | ForEach-Object {
+        $path = Join-Path $testRoot $_
+        Set-Content -LiteralPath $path -Value 'Send To fixture'
+        $path
+    }
+    Invoke-CheckedProcess $application ('--verify-runtime {0} "{1}" "{2}"' -f $sendTo.Arguments, $sentFiles[0], $sentFiles[1])
     $smokeScript = Join-Path $PSScriptRoot '../tests/smoke_tools.py'
     $reportPath = Join-Path $testRoot 'smoke.json'
     $python = Join-Path $target 'python/python.exe'
@@ -53,7 +64,7 @@ try {
     Invoke-CheckedProcess $uninstaller "/S _?=$target"
     if ((Test-Path -LiteralPath (Join-Path $target 'FormaBox.exe')) -or
         (Test-Path -LiteralPath $registry) -or (Test-Path -LiteralPath $shortcut) -or
-        (Test-Path -LiteralPath $desktopShortcut) -or
+        (Test-Path -LiteralPath $desktopShortcut) -or (Test-Path -LiteralPath $sendToShortcut) -or
         !(Test-Path -LiteralPath $userFile)) {
         throw 'Uninstall did not remove registered app files or did not preserve the user file'
     }
