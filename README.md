@@ -2,7 +2,7 @@
 
 万象是一个免费、开源的 Windows 文件工具箱。可以在一个界面里做图片转换与压缩、PDF 合并与拆分、文本整理、批量文件处理，也可以把操作串成工作流。文件在本机处理，无需注册账号。
 
-**当前源码版本为 0.5.0，已发布的 Windows 安装包版本为 0.4.0。** 支持 64 位 Windows 10（1809 及以上）和 Windows 11。
+**当前版本为 0.5.0（Windows 预览版）。** 支持 64 位 Windows 10（1809 及以上）和 Windows 11。
 
 PDF 分类支持批量添加可复制页码、加半透明文字水印、按毫米裁白边。指定页码范围后可单独执行，也可以加入工作流。Windows 可使用系统字体添加中文水印。裁边只修改页面可见范围，底层内容仍在文件中。
 
@@ -18,7 +18,7 @@ PDF 分类支持批量添加可复制页码、加半透明文字水印、按毫�
 
 ## 下载安装
 
-1. 在 [GitHub Release](https://github.com/astra-xr/FormaBox/releases/tag/v0.4.0) 下载 [Windows x64 安装包](https://github.com/astra-xr/FormaBox/releases/download/v0.4.0/FormaBox-0.4.0-Windows-x64-Setup.exe)。
+1. 在 [GitHub Release](https://github.com/astra-xr/FormaBox/releases/tag/v0.5.0) 下载 [Windows x64 安装包](https://github.com/astra-xr/FormaBox/releases/download/v0.5.0/FormaBox-0.5.0-Windows-x64-Setup.exe)。
 2. 双击安装包，按中文向导选择目录并安装。默认安装到 `%LOCALAPPDATA%\Programs\FormaBox`。升级时需先卸载旧版。
 3. 安装完成后，从桌面或开始菜单打开「万象」，也可以直接运行安装目录中的 `FormaBox.exe`。卸载入口在 Windows「设置 → 应用」。
 
