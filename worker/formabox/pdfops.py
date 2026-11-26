@@ -162,3 +162,66 @@ def searchable_pdf(ctx, inputs, params):
 
     return [add_ocr(ctx, path, str(params['language']), f'{index:04d}-{path.stem}-searchable.pdf')
             for index, path in enumerate(inputs, 1)]
+
+
+_PAGE_RANGE = param('pages', '页码范围（空=全部）', '')
+_NUMBER_POSITIONS = ['底部居中', '左下角', '右下角', '顶部居中', '左上角', '右上角']
+
+
+@tool('pdf.number', 'PDF', 'PDF 添加页码',
+      [_PAGE_RANGE, param('start', '起始编号', '1', 'number'),
+       param('position', '位置', '底部居中', 'choice', _NUMBER_POSITIONS),
+       param('size', '字号（pt）', '12', 'number'), param('margin', '距页边（毫米）', '8', 'number')],
+      maximum=32, engines=['pypdf'],
+      description='按文档页序为选中页连续编号。每份 PDF 从起始编号重新计数，页码可选中复制。')
+def add_page_numbers(ctx, inputs, params):
+    from .pdfedits import edit_documents, merge_stamp, number_layer
+
+    start = integer(params, 'start', 1, 999999)
+    size = integer(params, 'size', 6, 72)
+    margin = number(params, 'margin', 0, 100)
+    position = choice(params, 'position', _NUMBER_POSITIONS)
+
+    def edit(page, index):
+        merge_stamp(page, number_layer(start + index, size), position, margin)
+
+    return edit_documents(ctx, inputs, params['pages'], 'numbered', edit)
+
+
+@tool('pdf.watermark', 'PDF', 'PDF 文字水印',
+      [param('text', '水印文字', 'FormaBox'), _PAGE_RANGE,
+       param('position', '位置', '页面居中', 'choice', ['页面居中', *_NUMBER_POSITIONS]),
+       param('size', '字号（pt）', '36', 'number'), param('opacity', '不透明度（%）', '30', 'number')],
+      maximum=32, engines=['pypdf', 'Pillow'],
+      description='叠加半透明文字水印，保留原页文字和矢量内容。Windows 支持系统字体中的中文。')
+def add_watermark(ctx, inputs, params):
+    from .pdfedits import edit_documents, merge_stamp, watermark_layer
+
+    size = integer(params, 'size', 8, 144)
+    opacity = integer(params, 'opacity', 5, 100)
+    position = choice(params, 'position', ['页面居中', *_NUMBER_POSITIONS])
+    layer = watermark_layer(params['text'], size, opacity)
+
+    def edit(page, index):
+        merge_stamp(page, layer, position, 0 if position == '页面居中' else 8)
+
+    return edit_documents(ctx, inputs, params['pages'], 'watermarked', edit, min_version='%PDF-1.5')
+
+
+@tool('pdf.crop', 'PDF', 'PDF 裁白边',
+      [_PAGE_RANGE, param('top', '上（毫米）', '5', 'number'),
+       param('right', '右（毫米）', '5', 'number'), param('bottom', '下（毫米）', '5', 'number'),
+       param('left', '左（毫米）', '5', 'number')],
+      maximum=32, engines=['pypdf'],
+      description='按页面显示方向裁去指定边距。只改变可见范围，裁去的内容仍保留在 PDF 内。')
+def crop_margins(ctx, inputs, params):
+    from .pdfedits import crop_page, edit_documents
+
+    margins = tuple(number(params, edge, 0, 1000) for edge in ('top', 'right', 'bottom', 'left'))
+    if not any(margins):
+        raise ValueError('请至少设置一个大于 0 的裁切边距')
+
+    def edit(page, index):
+        crop_page(page, margins)
+
+    return edit_documents(ctx, inputs, params['pages'], 'cropped', edit)

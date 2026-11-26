@@ -179,6 +179,11 @@ def run_suite(root):
     locked = check('pdf.encrypt', [pdf], lambda p: PdfReader(p[0]).is_encrypted, pw)
     check('pdf.decrypt', locked or [None], lambda p: not PdfReader(p[0]).is_encrypted and pdf_pages(p[0]) == 2, pw)
     check('pdf.text', [pdf], lambda p: 'Page 2' in p[0].read_text(encoding='utf-8'))
+    check('pdf.number', [pdf], lambda p: [page.extract_text() for page in PdfReader(p[0]).pages] == ['3', '4'],
+          {'start': 3})
+    check('pdf.watermark', [pdf], lambda p: [len(page.images) for page in PdfReader(p[0]).pages] == [1, 0],
+          {'text': 'DRAFT', 'pages': '1'})
+    check('pdf.crop', [pdf], lambda p: 170 < PdfReader(p[0]).pages[0].cropbox.width < 173)
     check('pdf.render', [pdf], lambda p: len(p) == 2 and image_info(p[0]) == ('PNG', (400, 600)))
     check('pdf.from_images', [image, image], lambda p: pdf_pages(p[0]) == 2)
     check('pdf.compose', [pdf, image],

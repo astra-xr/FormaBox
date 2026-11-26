@@ -1,5 +1,13 @@
 # 实际测试记录
 
+## 0.5.0 PDF 页码、文字水印与裁白边
+
+在 Windows x64 上用 MSVC 2022 与 Qt 6.8.3 构建。用 `FormaBox.exe --verify-send-to --send-to` 传入两个带空格的中文路径，桌面回归返回 0。回归从 PDF 拖入推荐选择三项新工具，执行先裁边、再加页码、最后加文字水印的三步工作流，并检查任务结果。
+
+- `python -m pytest -q -ra tests` 运行 53 项测试，0 失败、0 跳过。
+- 新用例验证每份文档独立计数、旋转页左下角定位、页码可复制、水印透明度在渲染图上的实际效果、四种旋转角度的裁边、原文保留，以及无效边距触发整批回滚。
+- 在本机对带空格的中文路径输入实际渲染「内部资料」水印。PDF 裁边只修改可见范围，原有内容仍可从文件中提取。
+
 ## 0.4.0 结果面板、发送到、批量改名和多步工作流
 
 在 Windows x64 上用 MSVC 2022 和 Qt 6.8.3 构建，并运行 `FormaBox.exe --verify-runtime --send-to`，传入两个含空格的中文文件路径。退出码为 0。
@@ -7,6 +15,7 @@
 - `python -m pytest -q -ra tests` 为 46 项通过、0 失败、0 跳过。回归包含目标压缩的原始大小、批量改名的预览一致性、大小写重名、失效预览拒绝、EXIF 日期，以及原文件保留。
 - `python tests/smoke_tools.py` 为 59 项通过、0 失败、0 阻塞。
 - Windows 桌面回归检查启动参数导入、压缩结果统计与选中复用、三步预设保存和执行、中文路径的改名预览和副本输出。
+
 
 ## 0.3.0 PDF 限大小导出、扫描 OCR 与常用预设
 
@@ -41,17 +50,53 @@
 
 在 Windows x64、Qt 6.8.3 和 MSVC 2022 上编译。使用 Windows 平台插件和 Qt 软件渲染测试实际绘制。鼠标在同一按钮内从左侧移至右侧时，两处采样亮度按光斑所在位置切换。移出后光斑渐隐，点击“重载引擎”仍按原逻辑工作。项目根目录的启动器及主程序使用多分辨率 ICO，Windows 安装包同时为安装与卸载程序提供应用图标。
 
-## 0.1.4 界面与启动入口
+本机编译使用 `./.dev/build-msvc-release.cmd`，根目录 `FormaBox.exe --verify-runtime` 返回 0，已部署的工作进程报告版本 0.1.5。原版本文件保存在 `D:\tool\FormaBox\.dev\pointer-v015-cb890838`。
 
-浅色和深色主题使用渐变光晕与半透卡片。发布流程在 Windows 上构建并安装安装包，验证 Qt 界面和 worker 启动、桌面与开始菜单快捷方式、卸载清理和用户文件保留。
+## 本机按钮光感与 EXE 图标（2026-11-25）
 
-## 0.1.3 Windows Office 转 PDF 与项目启动器验收
+普通按钮、侧栏和工具卡使用三段渐变及更亮的顶部反光。悬停、选中和键盘聚焦有外圈光晕。增大深色模式输入提示和选中文字的对比度。蓝紫色「万」字图标同时用于界面、窗口及两份 Windows EXE。
 
-使用 Windows x64 上的 LibreOffice 26.8.3.1，通过 `FORMABOX_SOFFICE` 指定自定义安装目录。DOCX 回归测试经 JSONL worker 转换，验证中文与空格路径、PDF 页数与可提取正文及原文件保留。RTF 回归测试验证输出 PDF 正文。另用 0.1.3 桌面随附 Python worker 完成 DOCX 转 PDF。
+用 `./.dev/build-msvc-release.cmd` 在 Windows 编译并部署。用 Windows 平台插件抓取浅色和深色界面，确认按钮和文字可辨。校验启动器及主程序的 PE 图标资源和源 ICO 一致，含 16 到 256 像素的 10 档尺寸。项目根目录 `FormaBox.exe --verify-runtime` 启动回归返回 0。替换前的二进制位于 `D:\tool\FormaBox\.dev\glass-icon-668d9174\before`。
 
-`python -m pytest -q -ra tests` 为 **36 通过、0 跳过**。运行 `python tests/smoke_tools.py --scratch .dev` 为 **56 通过、0 跳过、0 失败**。系统 Python 的 pyreadline3 在 pytest 退出时报告句柄关闭异常，pytest 退出码为 0。Excel、PowerPoint 和复杂 Word 排版仍需专项验收。
+## 0.1.4 本机 Windows 更新（2026-11-25）
 
-项目根目录的开发启动器 `FormaBox.exe` 在 Windows 上以 MSVC 2022 编译。通过 `FormaBox.exe --verify-runtime` 从其他工作目录启动 `dist/FormaBox.exe` 并加载 worker，退出码 0。
+将发布标签 v0.1.4 的源码同步到本机，保留本地测试记录。使用 MSVC 2022、Qt 6.8.3 和 Ninja 编译，先部署到独立目录并验证启动，再更新项目根目录的启动器及 dist 中的应用。通过 Windows 平台插件和 Qt 软件渲染执行启动回归，验证工具清单加载、重复选择保留参数和工作流输入数量检查。
+
+```powershell
+.\.dev\build-msvc-release.cmd
+cmake --install build/windows-msvc-release --config Release --prefix 'D:\tool\FormaBox\.dev\local-v014-3a543314\dist'
+.\FormaBox.exe --verify-runtime
+```
+
+两次启动检查均返回 0。通过 dist/engines 中的 FFmpeg 和 Tesseract 以及用户配置的 LibreOffice，完整 pytest 为 **36 通过、0 跳过**，逐项工具试跑为 **56 通过、0 跳过、0 失败**。旧源码和替换前的程序文件已保存在同一独立目录中。
+
+## Windows 项目启动入口（2026-11-25）
+
+在 Windows x64 使用 MSVC 2022 编译项目根目录的 `FormaBox.exe`，由它启动同一项目下的 `dist/FormaBox.exe`。运行 `cmake --build build/windows-msvc-release --parallel 2` 并重新部署 `dist` 后，从不同的工作目录调用根目录启动器 `--verify-runtime`。桌面和 worker 正常加载，启动器返回 0。
+
+安装器脚本在保留开始菜单快捷方式的同时增加了桌面「万象」快捷方式，并在卸载时移除。安装器测试脚本已加入对应检查并通过 PowerShell 语法检查。新安装包的安装和卸载待下次构建验证。
+
+## 0.1.3 Windows Office 转 PDF 回归验收（2026-11-25）
+
+测试复用 worker 的 LibreOffice 查找逻辑，覆盖默认位置、PATH 和 `FORMABOX_SOFFICE` 指定程序。在用户的 Windows x64 环境使用 `D:\Assembler\LibreOffice\program\soffice.com`（26.8.3.1），实测 DOCX 和 RTF 转 PDF。DOCX 通过桌面使用的 JSONL worker 入口转换，验证了中文和空格路径、PDF 页数与可提取正文、原文件保留。随 0.1.3 桌面程序部署的 Python worker 也独立完成 DOCX 转 PDF，`build/windows-release-check/FormaBox.exe --verify-runtime` 启动检查返回 0。
+
+```powershell
+$env:FORMABOX_SOFFICE = [Environment]::GetEnvironmentVariable('FORMABOX_SOFFICE', 'User')
+$env:PYTHONPATH = (Resolve-Path worker).Path
+$env:PYTHONUTF8 = '1'
+$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD = '1'
+$engines = (Resolve-Path dist/engines).Path
+$env:Path = "$engines;$env:Path"
+$env:TESSDATA_PREFIX = Join-Path $engines 'tessdata'
+$scratch = New-Item -ItemType Directory -Path (Join-Path (Resolve-Path .dev).Path ('office-regression-' + [guid]::NewGuid().ToString('N')))
+$env:TEMP = $scratch.FullName
+$env:TMP = $scratch.FullName
+.\.venv\Scripts\python.exe -m formabox doctor
+.\.venv\Scripts\python.exe -m pytest -q -ra tests --basetemp (Join-Path $scratch.FullName 'pytest')
+.\.venv\Scripts\python.exe tests/smoke_tools.py --scratch $scratch.FullName --report (Join-Path $scratch.FullName 'smoke.json')
+```
+
+pytest **36 通过、0 跳过**。逐项工具试跑 **56 通过、0 跳过、0 失败**。系统 Python 的 pyreadline3 在 pytest 退出时报告句柄关闭异常，pytest 退出码为 0。Excel、PowerPoint 和复杂 Word 排版待专项验收。
 
 ## 0.1.3 Windows x64 桌面与运行时
 

@@ -50,6 +50,43 @@ static bool runTask(Controller &controller, const std::function<bool()> &start)
            controller.jobs().constLast().toMap().value("state") == QStringLiteral("完成");
 }
 
+static bool verifyPdfEdits(QQmlApplicationEngine &engine, QObject *root, Controller &controller,
+                           const QString &source, const QString &destination)
+{
+    auto window = engine.newQObject(root);
+    window.setProperty("inputs", engine.toScriptValue(QVariantList{source}));
+    window.setProperty("steps", engine.toScriptValue(QVariantList{}));
+    root->findChild<QObject *>("outputDirectory")->setProperty("text", destination);
+    const QStringList tools = {"pdf.crop", "pdf.number", "pdf.watermark"};
+    const auto suggestions = window.property("suggestions");
+    for (const auto &tool : tools) {
+        QJSValue spec;
+        for (int index = 0; index < suggestions.property("length").toInt(); ++index) {
+            const auto candidate = suggestions.property(index);
+            if (candidate.property("id").toString() == tool) {
+                spec = candidate;
+                break;
+            }
+        }
+        if (!spec.isObject() || !invokeQml(window, "chooseTool", {spec}) ||
+            !invokeQml(window, "setParam", {QJSValue("pages"), QJSValue("1")}) ||
+            !invokeQml(window, "addStep"))
+            return false;
+    }
+    QVariantMap preset{
+        {"steps", window.property("steps").toVariant()},
+        {"suffixes", QStringList{"pdf"}},
+    };
+    if (!window.property("workflowReady").toBool() || !runTask(controller, [&] {
+        return invokeQml(window, "runPreset", {engine.toScriptValue(preset)});
+    }))
+        return false;
+    const auto outputs = controller.resultItems(controller.jobs().size() - 1);
+    return outputs.size() == 1 &&
+           outputs.constFirst().toMap().value("path").toString().endsWith("-watermarked.pdf") &&
+           outputs.constFirst().toMap().value("canOpen").toBool();
+}
+
 static bool verifyFileTools(QQmlApplicationEngine &engine, QObject *root, Controller &controller,
                             const QString &source, const QDir &directory)
 {
@@ -198,6 +235,10 @@ static bool verifyWorkbench(QQmlApplicationEngine &engine, QObject *root, Contro
         lastOutput(controller, "workbench.pdf").size() != bytes)
         return false;
 
+    if (!verifyPdfEdits(engine, root, controller, pdfPath, files.filePath("pdf-edits"))) {
+        qWarning("PDF editing tools did not complete from the desktop workflow.");
+        return false;
+    }
     window.setProperty("inputs", engine.toScriptValue(QVariantList{imagePath}));
     const auto presets = window.property("matchingPresets");
     auto photo = presets.property(0);
@@ -264,7 +305,7 @@ static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controll
         QVariantList{QStringLiteral("one.txt"), QStringLiteral("two.txt")}));
     const bool ready = window.property("workflowReady").toBool() && verifyWorkbench(engine, root, controller);
     if (ready)
-        qInfo("Desktop checks passed: PDF export, task results, rename preview, and multi-step presets.");
+        qInfo("Desktop checks passed: PDF export and edits, task results, rename preview, and multi-step presets.");
     return ready;
 }
 

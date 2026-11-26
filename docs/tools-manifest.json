@@ -517,6 +517,166 @@
     ]
   },
   {
+    "id": "pdf.number",
+    "category": "PDF",
+    "label": "PDF 添加页码",
+    "params": [
+      {
+        "key": "pages",
+        "label": "页码范围（空=全部）",
+        "default": "",
+        "kind": "text",
+        "choices": []
+      },
+      {
+        "key": "start",
+        "label": "起始编号",
+        "default": "1",
+        "kind": "number",
+        "choices": []
+      },
+      {
+        "key": "position",
+        "label": "位置",
+        "default": "底部居中",
+        "kind": "choice",
+        "choices": [
+          "底部居中",
+          "左下角",
+          "右下角",
+          "顶部居中",
+          "左上角",
+          "右上角"
+        ]
+      },
+      {
+        "key": "size",
+        "label": "字号（pt）",
+        "default": "12",
+        "kind": "number",
+        "choices": []
+      },
+      {
+        "key": "margin",
+        "label": "距页边（毫米）",
+        "default": "8",
+        "kind": "number",
+        "choices": []
+      }
+    ],
+    "minimum": 1,
+    "maximum": 32,
+    "description": "按文档页序为选中页连续编号。每份 PDF 从起始编号重新计数，页码可选中复制。",
+    "engines": [
+      "pypdf"
+    ]
+  },
+  {
+    "id": "pdf.watermark",
+    "category": "PDF",
+    "label": "PDF 文字水印",
+    "params": [
+      {
+        "key": "text",
+        "label": "水印文字",
+        "default": "FormaBox",
+        "kind": "text",
+        "choices": []
+      },
+      {
+        "key": "pages",
+        "label": "页码范围（空=全部）",
+        "default": "",
+        "kind": "text",
+        "choices": []
+      },
+      {
+        "key": "position",
+        "label": "位置",
+        "default": "页面居中",
+        "kind": "choice",
+        "choices": [
+          "页面居中",
+          "底部居中",
+          "左下角",
+          "右下角",
+          "顶部居中",
+          "左上角",
+          "右上角"
+        ]
+      },
+      {
+        "key": "size",
+        "label": "字号（pt）",
+        "default": "36",
+        "kind": "number",
+        "choices": []
+      },
+      {
+        "key": "opacity",
+        "label": "不透明度（%）",
+        "default": "30",
+        "kind": "number",
+        "choices": []
+      }
+    ],
+    "minimum": 1,
+    "maximum": 32,
+    "description": "叠加半透明文字水印，保留原页文字和矢量内容。Windows 支持系统字体中的中文。",
+    "engines": [
+      "pypdf",
+      "Pillow"
+    ]
+  },
+  {
+    "id": "pdf.crop",
+    "category": "PDF",
+    "label": "PDF 裁白边",
+    "params": [
+      {
+        "key": "pages",
+        "label": "页码范围（空=全部）",
+        "default": "",
+        "kind": "text",
+        "choices": []
+      },
+      {
+        "key": "top",
+        "label": "上（毫米）",
+        "default": "5",
+        "kind": "number",
+        "choices": []
+      },
+      {
+        "key": "right",
+        "label": "右（毫米）",
+        "default": "5",
+        "kind": "number",
+        "choices": []
+      },
+      {
+        "key": "bottom",
+        "label": "下（毫米）",
+        "default": "5",
+        "kind": "number",
+        "choices": []
+      },
+      {
+        "key": "left",
+        "label": "左（毫米）",
+        "default": "5",
+        "kind": "number",
+        "choices": []
+      }
+    ],
+    "minimum": 1,
+    "maximum": 32,
+    "description": "按页面显示方向裁去指定边距。只改变可见范围，裁去的内容仍保留在 PDF 内。",
+    "engines": [
+      "pypdf"
+    ]
+  },
+  {
     "id": "video.convert",
     "category": "视频",
     "label": "视频转换",

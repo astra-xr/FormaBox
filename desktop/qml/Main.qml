@@ -285,7 +285,7 @@ ApplicationWindow {
         else if (suffixes.every(suffix => workbenchImages.includes(suffix)))
             ids = ["image.compress", "pdf.from_images", "image.ocr"]
         else if (suffixes.every(suffix => suffix === "pdf"))
-            ids = ["pdf.compose", "pdf.compress_target", "pdf.text"]
+            ids = ["pdf.compose", "pdf.compress_target", "pdf.text", "pdf.number", "pdf.watermark", "pdf.crop"]
         else if (suffixes.every(suffix => suffix === "pdf" || workbenchImages.includes(suffix)))
             ids = ["pdf.compose"]
         else if (suffixes.every(suffix => video.includes(suffix)))

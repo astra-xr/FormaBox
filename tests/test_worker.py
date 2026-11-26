@@ -147,6 +147,115 @@ def text_page(writer):
     return page
 
 
+def pdf_grayscale(path, index):
+    import pypdfium2 as pdfium
+
+    with closing(pdfium.PdfDocument(str(path))) as document, closing(document[index]) as page:
+        with closing(page.render(scale=2)) as bitmap, bitmap.to_pil() as image:
+            return image.convert('L')
+
+
+def test_pdf_numbering_is_selectable_and_uses_display_orientation(tmp_path):
+    from PIL import ImageChops
+
+    source = tmp_path / '讲义 原件.pdf'
+    writer = PdfWriter()
+    first = writer.add_blank_page(width=200, height=300).rotate(90)
+    first.cropbox.lower_left = (10, 20)
+    text_page(writer)
+    text_page(writer)
+    writer.add_metadata({'/Title': 'Lesson'})
+    writer.write(source)
+    original = source.read_bytes()
+    copy = tmp_path / '讲义 副本.pdf'
+    copy.write_bytes(original)
+
+    reply = run(tmp_path, 'pdf.number', [source, copy], {
+        'pages': '3,1,1', 'start': '6', 'position': '左下角',
+    })
+    for output in reply['files']:
+        document = PdfReader(output)
+        assert document.metadata.title == 'Lesson'
+        assert document.pages[0].extract_text() == '6'
+        assert document.pages[1].extract_text() == 'Digital reference'
+        assert document.pages[2].extract_text().split() == ['Digital', 'reference', '7']
+        assert document.pages[0].rotation == 90
+    with pdf_grayscale(reply['files'][0], 0) as image:
+        bounds = ImageChops.invert(image).getbbox()
+        assert bounds is not None
+        assert bounds[2] < image.width / 4 and bounds[1] > image.height * 3 / 4
+    assert source.read_bytes() == copy.read_bytes() == original
+
+
+def test_pdf_watermark_transparency_preserves_original_text(tmp_path):
+    source = tmp_path / '透明水印.pdf'
+    writer = PdfWriter()
+    writer.add_blank_page(width=250, height=160).rotate(270)
+    text_page(writer)
+    writer.add_blank_page(width=250, height=160)
+    writer.write(source)
+
+    transparent = result(run(tmp_path, 'pdf.watermark', [source], {'text': 'DRAFT', 'opacity': '40', 'pages': '1-2'}))
+    opaque = result(run(tmp_path, 'pdf.watermark', [source], {'text': 'DRAFT', 'opacity': '100', 'pages': '1-2'}))
+    with pdf_grayscale(transparent, 0) as light, pdf_grayscale(opaque, 0) as dark:
+        lightest_ink, background = light.getextrema()
+        opaque_ink, _ = dark.getextrema()
+        assert background == 255 and opaque_ink < 50
+        assert lightest_ink == pytest.approx(255 - (255 - opaque_ink) * 0.4, abs=4)
+    edited = PdfReader(transparent)
+    assert edited.pages[1].extract_text().strip() == 'Digital reference'
+    assert not list(edited.pages[2].images)
+
+
+@pytest.mark.parametrize('rotation,deltas', [
+    (0, (4, 3, 2, 1)),
+    (90, (1, 4, 3, 2)),
+    (180, (2, 1, 4, 3)),
+    (270, (3, 2, 1, 4)),
+])
+def test_pdf_crop_keeps_content_and_matches_display_edges(tmp_path, rotation, deltas):
+    from pypdf.generic import NameObject, NumberObject
+
+    source = tmp_path / '裁边原件.pdf'
+    writer = PdfWriter()
+    page = text_page(writer).rotate(rotation)
+    page[NameObject('/UserUnit')] = NumberObject(2)
+    page.cropbox.lower_left = (10, 15)
+    page.cropbox.upper_right = (210, 130)
+    writer.add_blank_page(width=220, height=140)
+    writer.write(source)
+    original = source.read_bytes()
+
+    output = result(run(tmp_path, 'pdf.crop', [source], {
+        'pages': '1', 'top': '1', 'right': '2', 'bottom': '3', 'left': '4',
+    }))
+    cropped = PdfReader(output)
+    left, bottom, right, top = [value * 72 / 25.4 / 2 for value in deltas]
+    assert [float(value) for value in cropped.pages[0].cropbox] == pytest.approx(
+        [10 + left, 15 + bottom, 210 - right, 130 - top])
+    assert list(cropped.pages[0].mediabox) == [0, 0, 220, 140]
+    assert list(cropped.pages[1].cropbox) == [0, 0, 220, 140]
+    assert cropped.pages[0].rotation == rotation
+    assert cropped.pages[0].extract_text() == 'Digital reference'
+    assert source.read_bytes() == original
+
+
+def test_pdf_edits_reject_invalid_inputs_without_partial_output(tmp_path, pdf):
+    tiny = tmp_path / 'tiny.pdf'
+    writer = PdfWriter()
+    writer.add_blank_page(width=15, height=15)
+    writer.write(tiny)
+    with pytest.raises(ValueError, match='裁切边距超出页面尺寸'):
+        run(tmp_path, 'pdf.crop', [pdf, tiny])
+    with pytest.raises(ValueError, match='页码超出范围'):
+        run(tmp_path, 'pdf.number', [pdf], {'pages': '3'})
+    with pytest.raises(ValueError, match='只支持一行'):
+        run(tmp_path, 'pdf.watermark', [pdf], {'text': 'one\ntwo'})
+    with pytest.raises(ValueError, match='文字或留边过大'):
+        run(tmp_path, 'pdf.watermark', [tiny], {'text': 'DRAFT'})
+    assert not list((tmp_path / 'out').iterdir())
+
+
 def test_target_pdf_compression_and_preview(tmp_path):
     from formabox.pdfworkbench import preview_compression
 
