@@ -35,17 +35,23 @@ try {
     $env:QT_QUICK_BACKEND = 'software'
     $env:PYTHONUTF8 = '1'
 
-    $sendTo = (New-Object -ComObject WScript.Shell).CreateShortcut($sendToShortcut)
+    $shell = New-Object -ComObject WScript.Shell
+    $sendTo = $shell.CreateShortcut($sendToShortcut)
     $application = Join-Path $target 'FormaBox.exe'
-    if ($sendTo.TargetPath -ne $application -or $sendTo.Arguments -ne '--send-to') {
-        throw 'Send To shortcut target or arguments are incorrect'
+    $sendTarget = ([string]$sendTo.TargetPath).Trim().Trim('"')
+    $sendArguments = ([string]$sendTo.Arguments).Trim().Trim('"')
+    if ($sendArguments -ne '--send-to' -or
+        [IO.Path]::GetFileName($sendTarget) -ne 'FormaBox.exe' -or
+        !(Test-Path -LiteralPath $sendTarget -PathType Leaf) -or
+        (Get-FileHash -LiteralPath $sendTarget).Hash -ne (Get-FileHash -LiteralPath $application).Hash) {
+        throw "Send To shortcut returned target [$sendTarget] with arguments [$sendArguments]. Expected [$application] with [--send-to]."
     }
     $sentFiles = @('发送样本 甲.txt', '发送样本 乙.txt') | ForEach-Object {
         $path = Join-Path $testRoot $_
         Set-Content -LiteralPath $path -Value 'Send To fixture'
         $path
     }
-    Invoke-CheckedProcess $application ('--verify-runtime {0} "{1}" "{2}"' -f $sendTo.Arguments, $sentFiles[0], $sentFiles[1])
+    Invoke-CheckedProcess $sendTarget ('--verify-runtime {0} "{1}" "{2}"' -f $sendArguments, $sentFiles[0], $sentFiles[1])
     $smokeScript = Join-Path $PSScriptRoot '../tests/smoke_tools.py'
     $reportPath = Join-Path $testRoot 'smoke.json'
     $python = Join-Path $target 'python/python.exe'
