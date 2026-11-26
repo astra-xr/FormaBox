@@ -1,7 +1,9 @@
 import hashlib,json,os,subprocess,sys,zipfile,shutil
+from contextlib import closing
+import random
 from pathlib import Path
 import pytest
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from pypdf import PdfReader,PdfWriter
 from formabox.core import execute,Cancelled,TOOLS
 from formabox import imageops,pdfops,mediaops,fileops,textops,privacyops
@@ -83,6 +85,92 @@ def test_workbench_limits_and_cleanup(tmp_path, pdf):
     with pytest.raises(ValueError, match='页码超出范围'):
         run(tmp_path, 'pdf.compose', [pdf], {'pages': order})
     assert not list((tmp_path / 'out').iterdir())
+
+
+def text_page(writer):
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
+    page = writer.add_blank_page(width=220, height=140)
+    font = DictionaryObject({NameObject('/Type'): NameObject('/Font'),
+                             NameObject('/Subtype'): NameObject('/Type1'),
+                             NameObject('/BaseFont'): NameObject('/Helvetica')})
+    resources = DictionaryObject({NameObject('/Font'): DictionaryObject({NameObject('/F1'): font})})
+    page[NameObject('/Resources')] = resources
+    stream = DecodedStreamObject()
+    stream.set_data(b'BT /F1 12 Tf 20 45 Td (Digital reference) Tj ET')
+    page[NameObject('/Contents')] = stream
+    return page
+
+
+def test_target_pdf_compression_and_preview(tmp_path):
+    from formabox.pdfworkbench import preview_compression
+
+    image_pdf = tmp_path / '扫描图.pdf'
+    pixels = random.Random(42).randbytes(1000 * 1000 * 3)
+    with Image.frombytes('RGB', (1000, 1000), pixels) as image:
+        image.save(image_pdf, 'PDF', quality=96)
+    mixed = tmp_path / '扫描图和数字文字.pdf'
+    writer = PdfWriter()
+    writer.append(image_pdf)
+    text_page(writer)
+    writer.write(mixed)
+    original = mixed.read_bytes()
+    output = result(run(tmp_path, 'pdf.compress_target', [mixed], {'target_kib': 160}))
+    assert output.stat().st_size <= 160 * 1024 < len(original)
+    optimized = PdfReader(output)
+    assert optimized.pages[1].extract_text() == 'Digital reference'
+    assert optimized.pages[0].images[0].image.width < 1000
+    assert mixed.read_bytes() == original
+
+    directory = tmp_path / '预览'
+    directory.mkdir()
+    plan = json.dumps([dict(source=0, page=0, rotation=0), dict(source=0, page=1, rotation=0)])
+    preview = preview_compression(dict(inputs=[str(mixed)], pages=plan, output=str(directory),
+                                       target_kib=1, page=0))
+    assert not preview['met']
+    assert 1024 < preview['size'] < preview['original']
+    assert preview['size'] == (directory / 'compressed.pdf').stat().st_size
+    with Image.open(directory / 'before.png') as before, Image.open(directory / 'after.png') as after:
+        assert before.size == after.size
+        assert before.tobytes() != after.tobytes()
+
+    with pytest.raises(ValueError, match='未达到'):
+        run(tmp_path, 'pdf.compress_target', [mixed], {'target_kib': 1})
+    assert not list((tmp_path / 'out').glob('.formabox-*'))
+
+
+def test_searchable_pdf_keeps_rotated_scan_appearance(tmp_path):
+    from formabox.core import find_executable
+    import pypdfium2 as pdfium
+
+    if not find_executable('tesseract'):
+        pytest.skip('Tesseract unavailable')
+    scan = tmp_path / '图片页.pdf'
+    with Image.new('RGB', (700, 300), 'white') as image:
+        ImageDraw.Draw(image).text((50, 35), 'SEARCHABLE PAGE', fill='black', font=ImageFont.load_default(52))
+        image.transpose(Image.Transpose.ROTATE_90).save(scan, 'PDF')
+    mixed = tmp_path / '带旋转的扫描件.pdf'
+    writer = PdfWriter()
+    writer.append(scan)
+    writer.pages[0].rotate(90)
+    writer.pages[0].cropbox.lower_left = (30, 15)
+    text_page(writer)
+    writer.write(mixed)
+    original = mixed.read_bytes()
+
+    output = result(run(tmp_path, 'pdf.ocr', [mixed], {'language': 'eng'}))
+    pages = PdfReader(output).pages
+    assert 'SEARCHABLE PAGE' in pages[0].extract_text()
+    assert pages[0].rotation == 90
+    assert pages[1].extract_text() == 'Digital reference'
+    assert mixed.read_bytes() == original
+
+    def pixels(path):
+        with closing(pdfium.PdfDocument(str(path))) as document, closing(document[0]) as page:
+            with closing(page.render(scale=1)) as bitmap, bitmap.to_pil() as image:
+                return image.size, image.tobytes()
+
+    assert pixels(output) == pixels(mixed)
 
 
 def test_engine_configuration_uses_saved_path(tmp_path, monkeypatch):

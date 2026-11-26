@@ -23,6 +23,16 @@ static bool invokeQml(QJSValue object, const char *method, const QJSValueList &a
     return !result.isError() && object.property(QString::fromLatin1(method)).isCallable();
 }
 
+static QFileInfo lastOutput(const Controller &controller, const QString &name)
+{
+    if (controller.jobs().isEmpty())
+        return {};
+    const auto job = controller.jobs().constLast().toMap();
+    if (job.value("state").toString() != QStringLiteral("完成"))
+        return {};
+    return QFileInfo(QDir(job.value("directory").toString()).filePath(name));
+}
+
 static bool verifyWorkbench(QQmlApplicationEngine &engine, QObject *root, Controller &controller)
 {
     QTemporaryDir files;
@@ -84,11 +94,52 @@ static bool verifyWorkbench(QQmlApplicationEngine &engine, QObject *root, Contro
         return false;
     if (controller.busy())
         exportWait.exec();
-    if (controller.jobs().isEmpty())
+    if (!lastOutput(controller, "workbench.pdf").isFile())
         return false;
-    const auto job = controller.jobs().constLast().toMap();
-    return job.value("state").toString() == QStringLiteral("完成") &&
-           QFileInfo(QDir(job.value("directory").toString()).filePath("workbench.pdf")).isFile();
+
+    QEventLoop previewWait;
+    QObject::connect(&controller, &Controller::pdfCompressionReady, &previewWait, &QEventLoop::quit);
+    QTimer::singleShot(8000, &previewWait, &QEventLoop::quit);
+    if (!invokeQml(panel, "open") || !invokeQml(panel, "previewCompression", {QJSValue(1)}))
+        return false;
+    if (controller.inspecting())
+        previewWait.exec();
+    const auto preview = panel.property("compression");
+    const auto bytes = preview.property("size").toInt();
+    const QUrl original = preview.property("before").toVariant().toUrl();
+    const QUrl optimized = preview.property("after").toVariant().toUrl();
+    if (bytes <= 0 || !QFileInfo(original.toLocalFile()).isFile() || !QFileInfo(optimized.toLocalFile()).isFile() ||
+        preview.property("met").toBool() != (bytes <= 1024) || !invokeQml(panel, "saveCompression") ||
+        lastOutput(controller, "workbench.pdf").size() != bytes)
+        return false;
+
+    window.setProperty("inputs", engine.toScriptValue(QVariantList{imagePath}));
+    const auto presets = window.property("matchingPresets");
+    auto photo = presets.property(0);
+    if (photo.property("tool").toString() != "image.compress")
+        return false;
+    root->findChild<QObject *>("outputDirectory")->setProperty("text", files.filePath("preset-output"));
+    const QString presetName = QStringLiteral("测试自定义预设");
+    if (!controller.savePreset(presetName, "image.compress", {{"target_kib", "40"}}, {imagePath}).isEmpty())
+        return false;
+    const auto saved = QSettings().value("tools/presets").toList();
+    if (saved.size() != 1 || saved.constFirst().toMap().value("params").toMap().value("target_kib") != "40" ||
+        controller.savePreset(presetName, "image.compress", {}, {imagePath}).isEmpty() ||
+        controller.savePreset("password", "pdf.encrypt", {{"password", "dummy"}}, {pdfPath}).isEmpty() ||
+        !controller.removePreset(presetName).isEmpty() || !QSettings().value("tools/presets").toList().isEmpty())
+        return false;
+    QEventLoop presetWait;
+    QObject::connect(&controller, &Controller::jobsChanged, &presetWait, [&] {
+        if (!controller.busy()) presetWait.quit();
+    });
+    QTimer::singleShot(7000, &presetWait, &QEventLoop::quit);
+    if (!invokeQml(window, "runPreset", {photo}))
+        return false;
+    if (controller.busy())
+        presetWait.exec();
+    const auto outputs = QDir(controller.jobs().constLast().toMap().value("directory").toString())
+                             .entryInfoList({"*.jpg"}, QDir::Files);
+    return outputs.size() == 1 && outputs.first().size() > 0 && outputs.first().size() <= 100000;
 }
 
 static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controller &controller)
@@ -127,7 +178,7 @@ static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controll
         QVariantList{QStringLiteral("one.txt"), QStringLiteral("two.txt")}));
     const bool ready = window.property("workflowReady").toBool() && verifyWorkbench(engine, root, controller);
     if (ready)
-        qInfo("Desktop checks passed: tool parameters, workflow validation, suggestions, PDF preview and export.");
+        qInfo("Desktop checks passed: task controls, PDF preview and export, size comparison, and quick presets.");
     return ready;
 }
 
@@ -170,7 +221,7 @@ int main(int argc, char **argv)
         };
         QObject::connect(&controller, &Controller::toolsChanged, &app, exitWhenReady);
         QTimer::singleShot(0, &app, exitWhenReady);
-        QTimer::singleShot(20'000, &app, [&] { app.exit(2); });
+        QTimer::singleShot(30'000, &app, [&] { app.exit(2); });
     }
     return app.exec();
 }

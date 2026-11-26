@@ -23,6 +23,7 @@ constexpr const char *engineVariables[] = {"FORMABOX_SOFFICE", "FORMABOX_FFMPEG"
 
 Controller::Controller(QObject *parent):QObject(parent){
  loadHistory();
+ m_presets = QSettings().value("tools/presets").toList();
  connect(QGuiApplication::styleHints(),&QStyleHints::colorSchemeChanged,this,&Controller::systemThemeChanged);
  connect(&catalogue,&QProcess::finished,this,[this](int code,QProcess::ExitStatus es){
   const auto doc=QJsonDocument::fromJson(catalogue.readAllStandardOutput());
@@ -107,6 +108,64 @@ QStringList Controller::inputSuffixes(const QVariantList &paths) const {
  return suffixes;
 }
 
+QString Controller::savePreset(QString name, const QString &tool, const QVariantMap &params,
+                               const QVariantList &inputs) {
+ name = name.trimmed();
+ if (name.isEmpty() || name.size() > 40)
+  return QStringLiteral("请输入 1–40 个字符的预设名称");
+ if (tool == "pdf.compose")
+  return QStringLiteral("页面布局无法保存为工具预设");
+ const auto found = std::find_if(m_tools.cbegin(), m_tools.cend(), [&tool](const QVariant &item) {
+  return item.toMap().value("id").toString() == tool;
+ });
+ if (found == m_tools.cend())
+  return QStringLiteral("工具不可用");
+ QVariantMap values;
+ for (const auto &item : found->toMap().value("params").toList()) {
+  const auto spec = item.toMap();
+  const auto key = spec.value("key").toString();
+  if (spec.value("kind").toString() == "password")
+   return QStringLiteral("含密码的工具不能保存预设");
+  const auto value = params.value(key, spec.value("default")).toString();
+  if (value.size() > 4096)
+   return QStringLiteral("预设参数太长");
+  values.insert(key, value);
+ }
+ auto next = m_presets;
+ if (next.size() >= 24)
+  return QStringLiteral("最多保存 24 个自定义预设");
+ for (const auto &item : next)
+  if (item.toMap().value("name").toString().compare(name, Qt::CaseInsensitive) == 0)
+   return QStringLiteral("已有同名预设");
+ auto suffixes = inputSuffixes(inputs);
+ suffixes.removeAll(QString());
+ suffixes.removeDuplicates();
+ next.append(QVariantMap{{"name", name}, {"tool", tool}, {"params", values}, {"suffixes", suffixes}});
+ return writePresets(next);
+}
+
+QString Controller::removePreset(const QString &name) {
+ auto next = m_presets;
+ const auto found = std::find_if(next.begin(), next.end(), [&name](const QVariant &item) {
+  return item.toMap().value("name").toString() == name;
+ });
+ if (found == next.end())
+  return QStringLiteral("预设不存在");
+ next.erase(found);
+ return writePresets(next);
+}
+
+QString Controller::writePresets(const QVariantList &presets) {
+ QSettings settings;
+ settings.setValue("tools/presets", presets);
+ settings.sync();
+ if (settings.status() != QSettings::NoError)
+  return QStringLiteral("无法保存预设");
+ m_presets = presets;
+ emit presetsChanged();
+ return {};
+}
+
 QVariantMap Controller::enginePaths() const {
  return QSettings().value("engines/paths").toMap();
 }
@@ -158,6 +217,57 @@ void Controller::clearPdfPreview() {
  if (!inspecting()) previewRoot.reset();
 }
 
+void Controller::previewPdfCompression(const QVariantList &inputs, const QString &pages, int targetKiB, int page) {
+ if (inspecting()) return;
+ compressionPreview = std::make_unique<QTemporaryDir>();
+ if (!compressionPreview->isValid()) {
+  compressionPreview.reset();
+  emit pdfCompressionReady({}, QStringLiteral("无法创建压缩预览目录"));
+  return;
+ }
+ inspectionRequest = QJsonObject::fromVariantMap(
+     {{"inputs", inputs}, {"pages", pages}, {"output", compressionPreview->path()},
+      {"target_kib", targetKiB}, {"page", page}});
+ startInspection("preview-pdf-compression", 180000);
+}
+
+void Controller::clearPdfCompression() {
+ if (inspectionCommand != "preview-pdf-compression")
+  compressionPreview.reset();
+}
+
+QString Controller::savePdfCompression(const QString &output) {
+ if (!compressionPreview || inspecting())
+  return QStringLiteral("请先生成压缩预览");
+ const auto directory = QDir::cleanPath(output.trimmed());
+ if (!QDir::isAbsolutePath(directory) || !QDir().mkpath(directory))
+  return QStringLiteral("无法创建输出目录");
+ QFile preview(compressionPreview->filePath("compressed.pdf"));
+ if (!preview.open(QIODevice::ReadOnly) || preview.size() <= 0)
+  return QStringLiteral("压缩预览已失效");
+ QTemporaryDir result(QDir(directory).filePath("FormaBox-XXXXXX"));
+ if (!result.isValid())
+  return QStringLiteral("无法创建任务目录");
+ QSaveFile destination(result.filePath("workbench.pdf"));
+ if (!destination.open(QIODevice::WriteOnly))
+  return QStringLiteral("无法保存 PDF：") + destination.errorString();
+ while (!preview.atEnd()) {
+  const auto bytes = preview.read(1024 * 1024);
+  if (bytes.isEmpty() || destination.write(bytes) != bytes.size())
+   return QStringLiteral("无法写入 PDF");
+ }
+ if (!destination.commit())
+  return QStringLiteral("无法保存 PDF：") + destination.errorString();
+ result.setAutoRemove(false);
+ m_jobs.append(QVariantMap{{"title", QStringLiteral("PDF 页面工作台")},
+                          {"state", QStringLiteral("完成")}, {"progress", 1.0},
+                          {"message", QStringLiteral("已保存预览 · %1 KiB").arg(preview.size() / 1024.0, 0, 'f', 1)},
+                          {"directory", result.path()}});
+ saveHistory();
+ emit jobsChanged();
+ return {};
+}
+
 void Controller::startInspection(const QString &command, int timeout, const QVariantMap *overrides) {
  inspectionCommand = command;
  inspectionTimedOut = false;
@@ -181,6 +291,7 @@ void Controller::finishInspection(bool exited) {
   error = diagnostics.isEmpty() ? QStringLiteral("无法运行工作进程") : diagnostics.left(500);
 
  const bool pdf = inspectionCommand == "preview-pdf";
+ const bool compression = inspectionCommand == "preview-pdf-compression";
  QVariantList pages;
  QVariantMap checks;
  if (pdf) {
@@ -207,6 +318,21 @@ void Controller::finishInspection(bool exited) {
   else
    pages.clear();
   previewBatch.reset();
+ } else if (compression) {
+  const QFileInfo candidate(compressionPreview->filePath("compressed.pdf"));
+  const auto before = compressionPreview->filePath("before.png");
+  const auto after = compressionPreview->filePath("after.png");
+  checks = result.toObject().toVariantMap();
+  if (error.isEmpty() && (!candidate.isFile() || !QFileInfo(before).isFile() || !QFileInfo(after).isFile() ||
+                          candidate.size() <= 0 || candidate.size() != checks.value("size").toLongLong() ||
+                          !checks.contains("met")))
+   error = QStringLiteral("压缩结果无效");
+  if (error.isEmpty()) {
+   checks.insert("before", QUrl::fromLocalFile(before));
+   checks.insert("after", QUrl::fromLocalFile(after));
+  } else {
+   compressionPreview.reset();
+  }
  } else {
   checks = result.toObject().toVariantMap();
   if (error.isEmpty() && saveEngines) {
@@ -236,6 +362,8 @@ void Controller::finishInspection(bool exited) {
  emit inspectionChanged();
  if (pdf)
   emit pdfPreviewReady(pages, error);
+ else if (compression)
+  emit pdfCompressionReady(checks, error);
  else
   emit enginesChecked(checks, error);
 }

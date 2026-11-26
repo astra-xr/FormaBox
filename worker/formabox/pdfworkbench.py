@@ -6,7 +6,7 @@ from contextlib import closing
 from PIL import Image
 from pypdf import PdfWriter
 
-from .core import checked_path, extended_path
+from .core import Context, checked_path, extended_path, integer, invoke
 from .imageops import load
 from .pdfops import reader, save
 
@@ -108,3 +108,24 @@ def write_pages(ctx, inputs, plan):
         if rotation:
             page.rotate(rotation)
     return save(writer, ctx, 'workbench.pdf')
+
+
+def preview_compression(request):
+    import pypdfium2 as pdfium
+    from .pdfprocessing import best_pdf, render_page
+
+    values = request.get('inputs')
+    if not isinstance(values, list) or not 1 <= len(values) <= 32:
+        raise ValueError('请选择 1–32 个文件')
+    inputs = [checked_path(value) for value in values]
+    ctx = Context(extended_path(checked_path(request.get('output'))), progress=lambda *args, **fields: None)
+    limit = integer(request, 'target_kib', 1, 262144) * 1024
+    original, = invoke('pdf.compose', inputs, {'pages': request.get('pages')}, ctx)
+    destination = ctx.path('compressed.pdf')
+    size = best_pdf(ctx, original, destination, limit)
+    for path, name in ((original, 'before.png'), (destination, 'after.png')):
+        with closing(pdfium.PdfDocument(str(path))) as document:
+            index = integer(request, 'page', 0, len(document) - 1)
+            with closing(document[index]) as page, closing(render_page(page, 560)) as bitmap, bitmap.to_pil() as image:
+                image.save(ctx.path(name))
+    return dict(original=original.stat().st_size, size=size, target=limit, met=size <= limit)

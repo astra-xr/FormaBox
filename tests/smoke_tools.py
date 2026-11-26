@@ -77,6 +77,8 @@ def run_suite(root):
     text_image = Image.new('RGB', (500, 140), 'white')
     ImageDraw.Draw(text_image).text((25, 24), 'HELLO 123', fill='black', font=ImageFont.load_default(56))
     text_image.save(ocr)
+    scan_pdf = samples / '扫描文字.pdf'
+    text_image.save(scan_pdf, 'PDF')
 
     pdf = samples / '短文档.pdf'
     writer = PdfWriter()
@@ -182,6 +184,10 @@ def run_suite(root):
     check('pdf.compose', [pdf, image],
           lambda p: pdf_pages(p[0]) == 2 and PdfReader(p[0]).pages[0].rotation == 90,
           {'pages': json.dumps([dict(source=0, page=1, rotation=90), dict(source=1, page=0, rotation=0)])})
+    check('pdf.compress_target', [pdf], lambda p: pdf_pages(p[0]) == 2 and p[0].stat().st_size <= 1024,
+          {'target_kib': 1})
+    check('pdf.ocr', [scan_pdf], lambda p: 'HELLO 123' in PdfReader(p[0]).pages[0].extract_text(),
+          {'language': 'eng'})
 
     check('video.convert', [video], lambda p: media_test(p[0], '0:v:0'), {'format': 'webm'})
     check('video.compress', [video], lambda p: media_test(p[0], '0:v:0'), {'height': 80, 'fps': 10})

@@ -131,3 +131,33 @@ def compose(ctx, inputs, params):
     from .pdfworkbench import write_pages
 
     return [write_pages(ctx, inputs, params['pages'])]
+
+
+@tool('pdf.compress_target', 'PDF', 'PDF 按大小压缩',
+      [param('target_kib', '目标大小（KiB）', '4882', 'number')],
+      engines=['pypdf', 'Pillow'],
+      description='优先压缩嵌入图片，保留 PDF 文字和矢量内容。未达目标会显示实际大小。')
+def compress_target(ctx, inputs, params):
+    from .pdfprocessing import best_pdf
+
+    limit = integer(params, 'target_kib', 1, 262144) * 1024
+    outputs = []
+    for index, path in enumerate(inputs, 1):
+        destination = ctx.path(f'{index:04d}-{path.stem}-compressed.pdf')
+        size = best_pdf(ctx, path, destination, limit)
+        if size > limit:
+            raise ValueError(f'{path.name}：试压后为 {size / 1024:.1f} KiB，未达到 {limit / 1024:.0f} KiB。'
+                             '可在 PDF 页面工作台预览并保存试压结果。')
+        outputs.append(destination)
+    return outputs
+
+
+@tool('pdf.ocr', 'PDF', '扫描 PDF 转可搜索 PDF',
+      [param('language', 'Tesseract 语言', 'chi_sim+eng')],
+      engines=['pypdfium2', 'tesseract'],
+      description='保留原页外观，为没有可提取文字的页面添加可搜索的文字层。')
+def searchable_pdf(ctx, inputs, params):
+    from .pdfprocessing import add_ocr
+
+    return [add_ocr(ctx, path, str(params['language']), f'{index:04d}-{path.stem}-searchable.pdf')
+            for index, path in enumerate(inputs, 1)]

@@ -475,6 +475,48 @@
     ]
   },
   {
+    "id": "pdf.compress_target",
+    "category": "PDF",
+    "label": "PDF 按大小压缩",
+    "params": [
+      {
+        "key": "target_kib",
+        "label": "目标大小（KiB）",
+        "default": "4882",
+        "kind": "number",
+        "choices": []
+      }
+    ],
+    "minimum": 1,
+    "maximum": 0,
+    "description": "优先压缩嵌入图片，保留 PDF 文字和矢量内容。未达目标会显示实际大小。",
+    "engines": [
+      "pypdf",
+      "Pillow"
+    ]
+  },
+  {
+    "id": "pdf.ocr",
+    "category": "PDF",
+    "label": "扫描 PDF 转可搜索 PDF",
+    "params": [
+      {
+        "key": "language",
+        "label": "Tesseract 语言",
+        "default": "chi_sim+eng",
+        "kind": "text",
+        "choices": []
+      }
+    ],
+    "minimum": 1,
+    "maximum": 0,
+    "description": "保留原页外观，为没有可提取文字的页面添加可搜索的文字层。",
+    "engines": [
+      "pypdfium2",
+      "tesseract"
+    ]
+  },
+  {
     "id": "video.convert",
     "category": "视频",
     "label": "视频转换",

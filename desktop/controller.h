@@ -18,6 +18,7 @@ class Controller final : public QObject {
  Q_PROPERTY(QString outputDefault READ outputDefault CONSTANT)
  Q_PROPERTY(bool systemDark READ systemDark NOTIFY systemThemeChanged)
  Q_PROPERTY(bool inspecting READ inspecting NOTIFY inspectionChanged)
+ Q_PROPERTY(QVariantList presets READ presets NOTIFY presetsChanged)
 public:
  explicit Controller(QObject *parent=nullptr);
  QVariantList tools() const {return m_tools;}
@@ -27,6 +28,10 @@ public:
  QString outputDefault() const;
  bool systemDark() const;
  bool inspecting() const { return !inspectionCommand.isEmpty(); }
+ QVariantList presets() const { return m_presets; }
+ Q_INVOKABLE QString savePreset(QString name, const QString &tool, const QVariantMap &params,
+                                const QVariantList &inputs);
+ Q_INVOKABLE QString removePreset(const QString &name);
  Q_INVOKABLE void reload();
  Q_INVOKABLE QString localPath(const QUrl &url) const;
  Q_INVOKABLE QStringList inputSuffixes(const QVariantList &paths) const;
@@ -34,6 +39,9 @@ public:
  Q_INVOKABLE void checkEngines(const QVariantMap &paths, bool save);
  Q_INVOKABLE void previewPdf(const QVariantList &inputs, int remaining);
  Q_INVOKABLE void clearPdfPreview();
+ Q_INVOKABLE void previewPdfCompression(const QVariantList &inputs, const QString &pages, int targetKiB, int page);
+ Q_INVOKABLE void clearPdfCompression();
+ Q_INVOKABLE QString savePdfCompression(const QString &output);
  Q_INVOKABLE void submit(QString tool,QVariantList inputs,QVariantMap params,QString output);
  Q_INVOKABLE void submitWorkflow(QVariantList steps,QVariantList inputs,QString output);
  Q_INVOKABLE void cancel(int index);
@@ -45,11 +53,15 @@ public:
 signals:
  void toolsChanged(); void jobsChanged(); void statusChanged(); void systemThemeChanged();
  void inspectionChanged();
+ void presetsChanged();
  void enginesChecked(QVariantMap results, QString message);
  void pdfPreviewReady(QVariantList pages, QString error);
+ void pdfCompressionReady(QVariantMap preview, QString error);
 private:
  struct Request {int index; QJsonObject json;};
  QVariantList m_tools,m_jobs; QString m_status; QProcess catalogue,worker; QByteArray buffer; QQueue<Request> pending; int active=-1;
+ QVariantList m_presets;
+ QString writePresets(const QVariantList &presets);
  std::unique_ptr<QTemporaryDir> temp;
  QJsonObject activeRequest, outcome;
  QHash<int,QJsonObject> retryRequests;
@@ -64,6 +76,7 @@ private:
  bool inspectionTimedOut = false;
  std::unique_ptr<QTemporaryDir> previewRoot;
  std::unique_ptr<QTemporaryDir> previewBatch;
+ std::unique_ptr<QTemporaryDir> compressionPreview;
  void startInspection(const QString &command, int timeout, const QVariantMap *overrides = nullptr);
  void finishInspection(bool exited);
  void finishJob(QVariantMap values);
