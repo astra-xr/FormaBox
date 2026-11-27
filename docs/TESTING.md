@@ -4,6 +4,8 @@
 
 Windows x64 的 `python -m pytest -q -ra tests` 通过 59 项。新增用例使用带中文、空格和百分号的文件名，在真实视频中依序提取不同的 PNG 帧，核对尺寸、张数上限和原文件字节。
 
+本机 `python tests/smoke_tools.py` 实跑 66 个工具，通过 66 项、失败 0 项、阻塞 0 项。完整引擎目录的桌面回归和项目根目录的 `FormaBox.exe --verify-runtime` 均返回 0。
+
 ## 内置引擎开发验收
 
 在 Windows x64 用 MSVC 2022 和 Qt 6.8.3 构建。暂存目录包含 Qt、独立 Python、工作进程及三个引擎。仅保留 Windows 系统 PATH，并清除外部引擎与语言包环境变量后，`python -m formabox check-engines` 通过 FFmpeg 音频生成、Tesseract 识别和 LibreOffice Word 转 PDF。结果路径均位于该暂存目录下的 `engines`。

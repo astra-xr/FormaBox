@@ -9,7 +9,7 @@ from pypdf import PdfReader, PdfWriter
 from pypdf.generic import ArrayObject
 
 from .core import copy_file, extended_path
-from .imageops import ocr_engine, tesseract_command
+from .imageops import ocr_engine, recognize_png
 from .pdfops import save
 
 MAX_PDF_SIZE = 256 * 1024**2
@@ -157,11 +157,9 @@ def add_ocr(ctx, path, lang, output_name):
                     image.save(work / 'page.png')
                 box = original.get_bbox()
                 rotation = original.get_rotation()
-            ctx.run(tesseract_command(engine, 'page.png', 'recognized', '-l', lang, '--dpi', '240',
-                                      '-c', 'textonly_pdf=1', '-c', 'tessedit_create_pdf=1',
-                                      '-c', 'tessedit_create_txt=0'), cwd=work, timeout=90)
             layer_path = work / 'recognized.pdf'
-            if not layer_path.is_file():
+            recognize_png(ctx, engine, work / 'page.png', layer_path, lang, pdf=True)
+            if not layer_path.stat().st_size:
                 raise RuntimeError('Tesseract 未生成 OCR 文字层')
             layer = PdfReader(layer_path).pages[0]
             if not layer.extract_text().strip():

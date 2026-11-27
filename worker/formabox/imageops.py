@@ -137,17 +137,29 @@ def grid(ctx,inputs,p):
     canvas.save(output)
     return [output]
 
-def tesseract_command(engine, *args):
-    data = Path(engine).parent / 'tessdata'
-    if data.is_dir() and (engine == bundled_engine('tesseract') or not os.environ.get('TESSDATA_PREFIX')):
-        return [engine, *args, '--tessdata-dir', data]
-    return [engine, *args]
+def run_tesseract(ctx, engine, *args, **options):
+    configured = os.environ.get('TESSDATA_PREFIX') if engine != bundled_engine('tesseract') else None
+    data = Path(configured) if configured else Path(engine).parent / 'tessdata'
+    if data.is_dir():
+        # Some Windows builds read arguments through the ANSI code page. The
+        # working directory and inherited file handles carry the real paths.
+        return ctx.run([engine, *args, '--tessdata-dir', '.'], cwd=data, **options)
+    return ctx.run([engine, *args], **options)
+
+
+def recognize_png(ctx, engine, image, result, lang, *, pdf=False):
+    args = ['stdin', 'stdout', '-l', lang]
+    if pdf:
+        args += ['--dpi', '240', '-c', 'textonly_pdf=1', '-c', 'tessedit_create_pdf=1',
+                 '-c', 'tessedit_create_txt=0']
+    with image.open('rb') as source, result.open('wb') as target:
+        run_tesseract(ctx, engine, *args, stdin_file=source, stdout_file=target, timeout=90 if pdf else 3600)
 
 
 def ocr_engine(ctx, lang):
     if not re.fullmatch(r'[A-Za-z0-9_]+(?:\+[A-Za-z0-9_]+)*',lang): raise ValueError('语言代码无效')
     engine=exe('tesseract')
-    languages=set(ctx.run(tesseract_command(engine, '--list-langs'), timeout=15).splitlines())
+    languages=set(run_tesseract(ctx, engine, '--list-langs', timeout=15).splitlines())
     missing=set(lang.split('+'))-languages
     if missing: raise RuntimeError('缺少 OCR 语言包: '+', '.join(sorted(missing)))
     return engine
@@ -162,8 +174,7 @@ def ocr(ctx,inputs,p):
         with tempfile.TemporaryDirectory(prefix='ocr-',dir=ctx.root) as folder:
             work=Path(folder)
             save_png(load(f),work/'input.png')
-            ctx.run(tesseract_command(engine, 'input.png', 'result', '-l', lang), cwd=work)
-            (work/'result.txt').rename(out)
+            recognize_png(ctx, engine, work/'input.png', out, lang)
         return out
     return each(ctx,inputs,one)
 

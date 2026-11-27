@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 from pypdf import PdfReader
 
 from .core import Context, find_executable
-from .imageops import tesseract_command
+from .imageops import run_tesseract
 from .textops import office, office_engine
 
 
@@ -22,7 +22,7 @@ def test_ffmpeg(ctx, engine):
 
 
 def test_tesseract(ctx, engine):
-    langs = set(ctx.run(tesseract_command(engine, '--list-langs'), timeout=10).splitlines())
+    langs = set(run_tesseract(ctx, engine, '--list-langs', timeout=10).splitlines())
     if 'eng' not in langs:
         raise RuntimeError('缺少英文字库 eng，请在安装目录补齐语言包')
     sample = ctx.path('sample.png')
@@ -30,7 +30,9 @@ def test_tesseract(ctx, engine):
         ImageDraw.Draw(image).text((20, 12), 'FORMA BOX', font=ImageFont.load_default(size=42), fill='black')
         image.save(sample)
     language = 'chi_sim+eng' if 'chi_sim' in langs else 'eng'
-    text = ctx.run(tesseract_command(engine, sample, 'stdout', '-l', language, '--psm', '7'), timeout=12)
+    with sample.open('rb') as source:
+        text = run_tesseract(ctx, engine, 'stdin', 'stdout', '-l', language, '--psm', '7',
+                             stdin_file=source, timeout=12)
     if 'FORMA' not in text.upper():
         raise RuntimeError('Tesseract 未识别出测试文字')
     if 'chi_sim' not in langs:

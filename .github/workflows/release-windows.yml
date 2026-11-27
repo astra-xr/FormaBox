@@ -32,15 +32,25 @@ jobs:
           python-version: '3.13'
       - name: Prepare bundled engines and source attachments
         run: |
-          ./scripts/stage-windows-engines.ps1 -EngineDirectory build/windows-engines -SourceDirectory build/engine-sources -WorkDirectory (Join-Path $env:RUNNER_TEMP 'formabox-engines')
+          ./scripts/stage-windows-engines.ps1 -EngineDirectory 'build/内置 引擎' -SourceDirectory build/engine-sources -WorkDirectory (Join-Path $env:RUNNER_TEMP 'formabox-engines')
       - name: Install and test worker dependencies
         run: |
-          $engineRoot = (Resolve-Path build/windows-engines).Path
+          $engineRoot = (Resolve-Path -LiteralPath 'build/内置 引擎').Path
           $env:Path = "$engineRoot\ffmpeg;$engineRoot\tesseract;$env:Path"
           $env:FORMABOX_SOFFICE = Join-Path $engineRoot 'libreoffice/program/soffice.com'
           $env:TESSDATA_PREFIX = Join-Path $engineRoot 'tesseract/tessdata'
           python -m pip install -r packaging/windows/runtime-requirements.txt -e './worker[test]'
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $diagnostics = python -X utf8 -m formabox check-engines
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $diagnostics
+          $engines = ($diagnostics | ConvertFrom-Json).result
+          foreach ($name in @('ffmpeg', 'tesseract', 'LibreOffice')) {
+              $check = $engines.$name
+              if (!$check.ok -or !$check.path.StartsWith("$engineRoot\")) {
+                  throw "Bundled engine $name failed: $($check.message)"
+              }
+          }
           python -m pytest -q -ra tests
       - name: Build Windows x64 desktop
         run: |
@@ -51,7 +61,7 @@ jobs:
           $compiler = Join-Path ${env:ProgramFiles(x86)} 'NSIS/makensis.exe'
           if (!(Test-Path -LiteralPath $compiler)) { throw 'NSIS is missing from the Windows runner image' }
           & $compiler /VERSION
-          ./scripts/package-windows.ps1 -BuildDirectory build/release -Python (Get-Command python).Source -MakeNsis $compiler -QtPrefix $env:QT_ROOT_DIR -EngineBundleDirectory build/windows-engines
+          ./scripts/package-windows.ps1 -BuildDirectory build/release -Python (Get-Command python).Source -MakeNsis $compiler -QtPrefix $env:QT_ROOT_DIR -EngineBundleDirectory 'build/内置 引擎'
       - name: Install, start, test and uninstall
         run: |
           $setup = Get-ChildItem build/installers -Filter '*-Full-Setup.exe' -File

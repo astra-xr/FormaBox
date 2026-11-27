@@ -156,18 +156,24 @@ class Context:
         p=self.root/safe_name(name)
         if p.exists(): raise FileExistsError(f'输出名称冲突: {name}')
         return p
-    def run(self,args,timeout=3600,cwd=None):
+    def run(self,args,timeout=3600,cwd=None,*,stdin_file=None,stdout_file=None):
         self.check()
         with tempfile.TemporaryFile() as out:
-            kwargs=dict(stdin=subprocess.DEVNULL,stdout=out,stderr=subprocess.STDOUT,shell=False,cwd=cwd)
+            kwargs=dict(stdin=stdin_file if stdin_file is not None else subprocess.DEVNULL,
+                        stdout=stdout_file if stdout_file is not None else out,
+                        stderr=out if stdout_file is not None else subprocess.STDOUT, shell=False, cwd=cwd)
             if os.name=='nt': kwargs['creationflags']=subprocess.CREATE_NO_WINDOW
             proc=subprocess.Popen([str(a) for a in args],**kwargs)
             started=time.monotonic()
             try:
-                while proc.poll() is None:
+                while True:
+                    if os.fstat(out.fileno()).st_size>16*1024**2: raise RuntimeError('外部工具日志超出限制')
+                    if stdout_file is not None and os.fstat(stdout_file.fileno()).st_size > 64*1024**2:
+                        raise RuntimeError('外部工具输出超出 64 MiB')
+                    if proc.poll() is not None:
+                        break
                     self.check()
                     if time.monotonic()-started>timeout: raise TimeoutError('外部工具运行超时')
-                    if os.fstat(out.fileno()).st_size>16*1024**2: raise RuntimeError('外部工具日志超出限制')
                     time.sleep(.1)
             finally:
                 if proc.poll() is None: proc.kill(); proc.wait()

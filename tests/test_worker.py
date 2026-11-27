@@ -422,7 +422,12 @@ def test_windows_bundled_engines_are_found_and_can_be_overridden(tmp_path, monke
     data = paths['tesseract'].parent / 'tessdata'
     data.mkdir()
     monkeypatch.setenv('TESSDATA_PREFIX', str(tmp_path / 'old-language-data'))
-    assert imageops.tesseract_command(str(paths['tesseract']), '--list-langs')[-2:] == ['--tessdata-dir', data]
+    class EngineProbe:
+        def run(self, args, cwd):
+            return args, cwd
+    args, cwd = imageops.run_tesseract(EngineProbe(), str(paths['tesseract']), '--list-langs')
+    assert args[-2:] == ['--tessdata-dir', '.']
+    assert cwd == data
 
     custom = tmp_path / 'ffmpeg.exe'
     custom.touch()
