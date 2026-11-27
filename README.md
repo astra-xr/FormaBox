@@ -2,7 +2,9 @@
 
 万象是一个免费、开源的 Windows 文件工具箱。可以在一个界面里做图片转换与压缩、PDF 合并与拆分、文本整理、批量文件处理，也可以把操作串成工作流。文件在本机处理，无需注册账号。
 
-**当前版本为 0.6.0（Windows 预览版）。** 支持 64 位 Windows 10（1809 及以上）和 Windows 11。
+**当前版本为 0.7.0（Windows 完整预览版）。** 支持 64 位 Windows 10（1809 及以上）和 Windows 11。
+
+拖入视频可以按设定间隔批量抽帧，限制每段视频的张数和 PNG 最长边。
 
 拖入 SRT 或 WebVTT 字幕可以互转格式、按毫秒统一提前或延后，也可以导出纯文本讲稿。三项工具支持批量处理和工作流，直接在本机运行，无需 FFmpeg。
 
@@ -14,25 +16,19 @@ PDF 分类支持批量添加可复制页码、加半透明文字水印、按毫�
 
 在 PDF 页面工作台用缩略图调整 PDF 和图片的页序、旋转或移除页面。0.3.0 可在导出时选择「限制导出大小」，查看选中页的压缩前后对照和实际大小，再决定是否保存。
 
-0.3.0 还支持为扫描 PDF 添加可搜索文字层，保留原页面外观。已有可提取文字的页面会跳过。压缩和 OCR 支持未加密的 PDF，每份最多 300 页、256 MiB。扫描 OCR 需要 Tesseract 及相应语言包。
+0.3.0 还支持为扫描 PDF 添加可搜索文字层，保留原页面外观。已有可提取文字的页面会跳过。压缩和 OCR 支持未加密的 PDF，每份最多 300 页、256 MiB。完整安装包内置 Tesseract 及英文、简体中文语言包。
 
-拖入文件后，会根据格式和数量推荐可用操作及匹配的预设。「常用预设」可以保存当前工具参数，也可以直接运行报名照压缩、Word 转 PDF 或扫描 PDF OCR。顶部「引擎设置」可选择 LibreOffice、FFmpeg 和 Tesseract 的可执行文件，使用本地样本测试并保存路径。
+拖入文件后，会根据格式和数量推荐可用操作及匹配的预设。「常用预设」可以保存当前工具参数，也可以直接运行报名照压缩、Word 转 PDF 或扫描 PDF OCR。
 
 ## 下载安装
 
-1. 在 [GitHub Release](https://github.com/astra-xr/FormaBox/releases/tag/v0.6.0) 下载 [Windows x64 安装包](https://github.com/astra-xr/FormaBox/releases/download/v0.6.0/FormaBox-0.6.0-Windows-x64-Setup.exe)。
+1. 在 [GitHub Release](https://github.com/astra-xr/FormaBox/releases/tag/v0.7.0) 下载 [Windows x64 完整安装包](https://github.com/astra-xr/FormaBox/releases/download/v0.7.0/FormaBox-0.7.0-Windows-x64-Full-Setup.exe)。
 2. 双击安装包，按中文向导选择目录并安装。默认安装到 `%LOCALAPPDATA%\Programs\FormaBox`。升级时需先卸载旧版。
 3. 安装完成后，从桌面或开始菜单打开「万象」，也可以直接运行安装目录中的 `FormaBox.exe`。卸载入口在 Windows「设置 → 应用」。
 
-安装包自带 Qt 和 Python 运行环境。它暂未签名，Windows SmartScreen 可能显示未知发布者。可对照 Release 上的 `.sha256` 文件校验下载。
+**完整包内置 Qt、Python、FFmpeg 8.1.2、Tesseract 5.5.4（英文和简体中文语言包）及 LibreOffice 26.8.3.1。** 装一次万象即可使用音视频转换、图片和扫描 PDF OCR、Word / Excel / PPT 转 PDF，无需单独安装或手动配置引擎。
 
-| 用途 | 需要单独安装的引擎 |
-| --- | --- |
-| 音视频转换、压缩和拼接 | FFmpeg |
-| 图片文字识别、扫描 PDF OCR | Tesseract 及所选语言的数据 |
-| Word、Excel、PPT 转 PDF | LibreOffice |
-
-无需额外引擎即可使用内置的图片、PDF、文本和文件工具。程序会显示其他功能所缺的依赖。
+安装包暂未签名，Windows SmartScreen 可能显示未知发布者。可使用 Release 的 `.sha256` 文件核对下载。对应源码附件供开发者查阅，日常使用下载完整安装包即可。
 
 [路线图](ROADMAP.md) · [测试记录](docs/TESTING.md) · [安全边界](docs/SECURITY.md) · [全部发布版本](https://github.com/astra-xr/FormaBox/releases)
 
@@ -51,7 +47,7 @@ CMakeLists.txt           Qt 桌面构建
  ROADMAP.md              完整目标与实际实现状态
 ```
 
-## Windows 开发运行
+## 从源码开发
 
 需要 Visual Studio 2022 C++ 工具链、CMake 3.21+、Qt 6.5+（建议同一架构的 MSVC 2022 版本）、Python 3.11 或更高版本。Windows 安装包使用 Python 3.13。若使用 Qt 官方安装器，确认安装 Qt Quick / Quick Controls 所需组件。使用有 CMake/MSVC 环境的 PowerShell：
 

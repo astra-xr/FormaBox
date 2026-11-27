@@ -1,10 +1,12 @@
 # 实际测试记录
 
-## 0.7.0 视频批量抽帧
+## 0.7.0 视频批量抽帧与 Windows 完整安装包
 
 Windows x64 的 `python -m pytest -q -ra tests` 通过 59 项。新增用例使用带中文、空格和百分号的文件名，在真实视频中依序提取不同的 PNG 帧，核对尺寸、张数上限和原文件字节。
 
 本机 `python tests/smoke_tools.py` 实跑 66 个工具，通过 66 项、失败 0 项、阻塞 0 项。完整引擎目录的桌面回归和项目根目录的 `FormaBox.exe --verify-runtime` 均返回 0。
+
+发布流程在 Windows Server 2022 安装到含中文和空格的路径，用随包提供的 FFmpeg、Tesseract 和 LibreOffice 分别验证音频生成、中英文 OCR 语言包与识别、Word 转 PDF。清除外部配置后，已安装的 66 个工具全部通过实跑。另验证了资源管理器「发送到」导入两个中文路径、桌面启动，以及卸载保留用户创建的文件。[发布验收记录](https://github.com/astra-xr/FormaBox/actions/runs/45960414096)
 
 ## 内置引擎开发验收
 
