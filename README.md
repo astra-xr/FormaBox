@@ -2,11 +2,11 @@
 
 万象是一个免费、开源的 Windows 文件工具箱。可以在一个界面里做图片转换与压缩、PDF 合并与拆分、文本整理、批量文件处理，也可以把操作串成工作流。文件在本机处理，无需注册账号。
 
-**当前版本为 0.8.0（Windows 完整预览版）。** 支持 64 位 Windows 10（1809 及以上）和 Windows 11。
+**当前版本为 0.8.1（Windows 完整预览版）。** 支持 64 位 Windows 10（1809 及以上）和 Windows 11。
 
 ## 下载安装
 
-1. 在 [GitHub Release](https://github.com/astra-xr/FormaBox/releases/tag/v0.8.0) 下载 [Windows x64 完整安装包](https://github.com/astra-xr/FormaBox/releases/download/v0.8.0/FormaBox-0.8.0-Windows-x64-Full-Setup.exe)。
+1. 在 [GitHub Release](https://github.com/astra-xr/FormaBox/releases/tag/v0.8.1) 下载 [Windows x64 完整安装包](https://github.com/astra-xr/FormaBox/releases/download/v0.8.1/FormaBox-0.8.1-Windows-x64-Full-Setup.exe)。
 2. 双击安装包，按中文向导选择目录并安装。默认安装到 `%LOCALAPPDATA%\Programs\FormaBox`。升级时需先卸载旧版。
 3. 安装完成后，从桌面或开始菜单打开「万象」，也可以直接运行安装目录中的 `FormaBox.exe`。卸载入口在 Windows「设置 → 应用」。
 
@@ -18,7 +18,9 @@
 
 首页默认显示 12 个常用工具。左栏按图片、PDF、视频、音频、文档与数据、文件与隐私分类。「全部工具」可浏览完整列表，搜索框始终查找所有工具。
 
-拖入文件后，万象会推荐适用的操作和预设。任务中心和工作流可以收起，开始新任务或添加工作流步骤时会自动展开。右上角可切换浅色、深色或跟随系统。主界面和弹窗的按钮都采用柔和的随鼠标反光。
+拖入文件后，万象会推荐适用的操作和预设。任务中心和工作流可以收起，开始新任务或添加工作流步骤时会自动展开。
+
+Windows 顶栏把万象标题、工具入口和窗口按钮放在一起。右上角可切换浅色、深色或跟随系统，顶栏和细边框会一起变色。拖动顶栏空白处可移动窗口，双击可最大化或还原，拖动窗口边缘或四角可缩放。主界面和弹窗按钮保留随鼠标移动的柔和反光。
 
 - **图片与文档**。转换、压缩图片或识别中英文。可以从「常用预设」压缩报名照，也可以直接把 Word、Excel 或 PPT 转成 PDF。
 - **PDF**。合并、拆分、加页码、加文字水印或裁白边。页面工作台支持拖动排序、旋转、移除和插入页面，也可以在导出前按目标大小预览压缩结果。扫描件 OCR 可保留页面外观并添加可搜索文字层。压缩和 OCR 支持未加密的 PDF，每份最多 300 页、256 MiB。裁白边保留底层内容。

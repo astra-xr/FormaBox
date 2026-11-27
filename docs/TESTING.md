@@ -6,6 +6,8 @@
 
 本机 `python -m pytest -q -ra tests` 通过 59 项，`python tests/smoke_tools.py` 实跑 66 个工具，失败和阻塞均为 0。
 
+GitHub 发布流程另从完整安装包安装到带中文和空格的目录。通过桌面边框、快捷方式、三个内置引擎、66 个工具实跑以及卸载保留用户文件的检查。[发布验收记录](https://github.com/astra-xr/FormaBox/actions/runs/45982142198)
+
 ## 0.8.0 界面与工具导航
 
 Windows x64 使用 MSVC 2022 和 Qt 6.8.3 编译并运行 `FormaBox.exe --verify-runtime`。检查首页 12 个互不重复的常用工具、文档与数据和文件与隐私分组、跨分类搜索、全部工具入口，以及任务中心和工作流的初始折叠状态。切换浅色和深色后，按钮跟随主题。向窗口发送两个鼠标移动事件，确认按钮反光位置随指针改变。
