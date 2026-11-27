@@ -76,21 +76,26 @@ QString batchSession(const QJsonObject &request) {
 }
 }
 
-Controller::Controller(QObject *parent):QObject(parent), bundledEnginePaths(detectBundledEngines()){
+Controller::Controller(QObject *parent)
+ : QObject(parent), toolRegistry([this](QProcess &process) { configure(process); }),
+   bundledEnginePaths(detectBundledEngines()) {
  loadHistory();
  m_presets = QSettings().value("tools/presets").toList();
  m_favorites = QSettings().value("tools/favorites").toStringList();
  connect(QGuiApplication::styleHints(),&QStyleHints::colorSchemeChanged,this,&Controller::systemThemeChanged);
- connect(&catalogue,&QProcess::finished,this,[this](int code,QProcess::ExitStatus es){
-  const auto doc=QJsonDocument::fromJson(catalogue.readAllStandardOutput());
-  if(code==0 && es==QProcess::NormalExit && doc.isArray()){m_tools=doc.array().toVariantList();emit toolsChanged();setStatus(QStringLiteral("已加载 %1 个工具 · 本地处理").arg(m_tools.size()));}
-  else setStatus(QStringLiteral("工具引擎加载失败：")+QString::fromUtf8(catalogue.readAllStandardError()).left(500));
-  if (reloadPending) {
-   reloadPending = false;
-   QTimer::singleShot(0, this, &Controller::reload);
-  }
+ connect(&toolRegistry, &ToolRegistry::loading, this, [this] {
+  setStatus(QStringLiteral("正在加载工具…"));
  });
- connect(&catalogue,&QProcess::errorOccurred,this,[this](QProcess::ProcessError){setStatus(QStringLiteral("无法启动 Python 工具引擎：")+catalogue.errorString());});
+ connect(&toolRegistry, &ToolRegistry::changed, this, [this] {
+  emit toolsChanged();
+  setStatus(QStringLiteral("已加载 %1 个工具 · 本地处理").arg(toolRegistry.tools().size()));
+ });
+ connect(&toolRegistry, &ToolRegistry::loadFailed, this, [this](const QString &details) {
+  setStatus(QStringLiteral("工具引擎加载失败：") + details);
+ });
+ connect(&toolRegistry, &ToolRegistry::startFailed, this, [this](const QString &details) {
+  setStatus(QStringLiteral("无法启动 Python 工具引擎：") + details);
+ });
  connect(&worker,&QProcess::started,this,[this]{worker.write(QJsonDocument(activeRequest).toJson(QJsonDocument::Compact));worker.closeWriteChannel();});
  connect(&worker,&QProcess::readyReadStandardOutput,this,[this]{buffer+=worker.readAllStandardOutput();int n;while((n=buffer.indexOf('\n'))>=0){auto line=buffer.left(n);buffer.remove(0,n+1);processLine(line);}});
  connect(&worker,&QProcess::readyReadStandardError,this,[this]{worker.readAllStandardError();});
@@ -147,7 +152,7 @@ void Controller::configure(QProcess &p, const QVariantMap *overrides){
  }
  p.setProcessEnvironment(env);p.setProgram(python);
 }
-void Controller::reload(){if(catalogue.state()!=QProcess::NotRunning){reloadPending=true;return;}configure(catalogue);catalogue.setArguments({"-B","-m","formabox","list","--check-engines"});setStatus(QStringLiteral("正在加载工具…"));catalogue.start();}
+void Controller::reload(){toolRegistry.reload();}
 QString Controller::localPath(const QUrl &url)const{return url.isLocalFile()?url.toLocalFile():QString();}
 
 QStringList Controller::inputSuffixes(const QVariantList &paths) const {
@@ -162,12 +167,10 @@ QStringList Controller::inputSuffixes(const QVariantList &paths) const {
 QString Controller::presetParameters(const QString &tool, const QVariantMap &params, QVariantMap &values) const {
  if (tool == "pdf.compose")
   return QStringLiteral("页面布局无法保存为工具预设");
- const auto found = std::find_if(m_tools.cbegin(), m_tools.cend(), [&tool](const QVariant &item) {
-  return item.toMap().value("id").toString() == tool;
- });
- if (found == m_tools.cend())
+ const auto toolSpec = toolRegistry.find(tool);
+ if (toolSpec.isEmpty())
   return QStringLiteral("工具不可用");
- for (const auto &item : found->toMap().value("params").toList()) {
+ for (const auto &item : toolSpec.value("params").toList()) {
   const auto spec = item.toMap();
   const auto key = spec.value("key").toString();
   if (spec.value("kind").toString() == "password")
@@ -340,9 +343,7 @@ void Controller::previewRename(const QVariantList &inputs, const QVariantMap &pa
 bool Controller::setFavorites(const QStringList &ids) {
  if (ids.size() > 12 || QSet<QString>(ids.cbegin(), ids.cend()).size() != ids.size()) return false;
  for (const auto &id : ids)
-  if (std::none_of(m_tools.cbegin(), m_tools.cend(), [&](const auto &entry) {
-       return entry.toMap().value("id").toString() == id;
-      })) return false;
+  if (toolRegistry.find(id).isEmpty()) return false;
  QSettings settings;
  settings.setValue("tools/favorites", ids);
  settings.sync();
@@ -582,7 +583,7 @@ void Controller::finishInspection(bool exited) {
 }
 void Controller::submit(QString tool,QVariantList inputs,QVariantMap params,QString output){
  if(tool.isEmpty()||inputs.isEmpty()||output.trimmed().isEmpty()){setStatus(QStringLiteral("请选择工具、输入和输出目录"));return;}
- QString title=tool;for(auto v:m_tools){auto m=v.toMap();if(m.value("id").toString()==tool)title=m.value("label").toString();}
+ const auto title = toolRegistry.find(tool).value("label", tool).toString();
  enqueue(QJsonObject::fromVariantMap({{"tool",tool},{"inputs",inputs},{"params",params},{"output",output}}),title);
 }
 void Controller::submitWorkflow(QVariantList steps,QVariantList inputs,QString output){if(steps.isEmpty()||inputs.isEmpty()||output.trimmed().isEmpty()){setStatus(QStringLiteral("请提供工作流、输入及输出目录"));return;}enqueue(QJsonObject::fromVariantMap({{"steps",steps},{"inputs",inputs},{"output",output}}),QStringLiteral("工作流 (%1 步)").arg(steps.size()));}

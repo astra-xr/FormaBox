@@ -1,5 +1,13 @@
 # 实际测试记录
 
+## 0.9.1 开发中 · 工具目录拆分
+
+在本机 Windows x64 上，改动前用 `Omnora.exe --verify-runtime` 验证项目现有启动器，退出码为 0。用项目虚拟环境运行 `python -B -m pytest -q -ra -p no:cacheprovider --basetemp .dev/registry-091/pytest-before tests`，61 项通过，6 项跳过。跳过的用例需要 PATH 中的 FFmpeg（3 项）、Tesseract（1 项）或可运行的 LibreOffice（2 项）。本轮基线有意关闭 LibreOffice。
+
+运行 `python -m formabox list` 后与 `docs/tools-manifest.json` 比对，79 项工具的 ID、顺序和规格一致。拆分后重跑 `test_manifest`、`test_cli` 和 `test_workflow_progress_across_steps`，3 项通过。Qt 6.8.3 的 `moc` 成功生成 `ToolRegistry` 和 `Controller` 的元对象，保留了原有的 `tools` 属性和通知信号。
+
+新增桌面回归检查连续三次刷新时是否合并等待中的请求，以及刷新前后目录规格是否一致。此前本机 C++ 编译触发了 Visual Studio 诊断联网，当前轮次的 `python -B tests/smoke_tools.py` 也因同类诊断连接被自动拦截，关闭外部引擎的试跑同样被拦截。新版 C++ 编译、桌面回归、79 项全工具实跑和安装包验收仍待完成。
+
 ## 0.9.0 文件工作台扩展
 
 本机 Windows x64 执行 `python -m pytest -q -ra tests` 通过 65 项，`python tests/smoke_tools.py` 实跑 79 个工具，失败和阻塞均为 0。用真实媒体验证两遍压缩的目标体积、视频剪切拼接、静音编辑、本机语音转写，以及 TXT/SRT 输出。用真实归档验证 7z、TAR、TAR.GZ 和 GZ 的创建、预览和指定文件提取。

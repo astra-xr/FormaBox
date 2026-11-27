@@ -6,6 +6,8 @@ Qt 通过 `python -m formabox list` 获得 JSON 数组工具规格，规格含 i
 
 桌面加载目录时附加 `--check-engines`，工具规格里会增加 `missing_engines` 数组。原始 `list` 格式保持兼容。`doctor` 输出本机引擎可发现性。
 
+桌面的 `ToolRegistry` 负责异步目录加载、刷新请求合并，以及按工具 ID 查询规格。`Controller` 提供 worker 启动配置，并将目录和刷新状态转发给原有 QML 接口。预设、常用工具和任务标题共用注册表查询。加载失败时保留上一次成功获取的目录。
+
 运行时使用 `python -m formabox run --request -`，stdin 写入单个 UTF-8 JSON 对象再关闭。单进程一次任务。stdout JSONL：`progress` current/total/message，`result` directory/files，`error` message/type，`cancelled` message。只有真实返回并正常退出时可判定成功。退出码 0/1/2。进度目前通常按文件计数而非时间，单个长任务可能长时间不变化。
 
 取消机制：桌面端创建每任务独立临时目录，取消时写标记文件，worker 在循环与外部进程轮询中检查；库内部的单次长调用未必能即时取消。Python 进程崩溃或被强制终止可能遗留暂存目录和外部子进程。后续用 Windows Job Object/受限令牌等做进程树控制与 OS 级沙箱。

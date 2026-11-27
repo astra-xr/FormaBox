@@ -76,3 +76,56 @@ jobs:
             build/desktop-check/dist/Omnora.exe
           if-no-files-found: error
           retention-days: 3
+      - name: Prepare verified engine and speech fixtures
+        if: github.ref == 'refs/heads/qa/omnora-091-tool-registry'
+        shell: pwsh
+        run: |
+          $fixtures = (New-Item -ItemType Directory -Force -Path 'build/qa-fixtures').FullName
+          function Save-Fixture([string]$url, [string]$file, [string]$sha256) {
+            curl.exe --fail --location --retry 3 --silent --show-error --output $file $url
+            if ($LASTEXITCODE -or (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $sha256) {
+              throw "Invalid QA fixture: $file"
+            }
+          }
+          $setup = Join-Path $fixtures 'baseline-setup.exe'
+          Save-Fixture 'https://github.com/astra-xr/Omnora/releases/download/v0.9.0/FormaBox-0.9.0-Windows-x64-Full-Setup.exe' $setup '4a071286003863138fca327aaf6a88e77fedfbaab8c8ca581b1837b4f63ed4b1'
+          Save-Fixture 'https://github.com/astra-xr/Omnora/releases/download/v0.9.0/Whisper-Multilingual-Tiny.bin' (Join-Path $fixtures 'speech-model.bin') 'be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21'
+          Save-Fixture 'https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.8.3/samples/jfk.wav' (Join-Path $fixtures 'speech-test.wav') '59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e'
+          $baseline = Join-Path $env:RUNNER_TEMP 'omnora-baseline-090'
+          $installed = Start-Process -FilePath $setup -ArgumentList "/S /D=$baseline" -WindowStyle Hidden -PassThru -Wait
+          if ($installed.ExitCode) { throw 'Unable to extract engines from the verified release installer' }
+          $uninstaller = Join-Path $baseline 'Uninstall.exe'
+          try {
+            $engineRoot = Join-Path $fixtures 'engines'
+            robocopy.exe (Join-Path $baseline 'engines') $engineRoot /E /XJ /R:0 /W:0 /NFL /NDL /NJH /NJS /NP
+            if ($LASTEXITCODE -ge 8 -or !(Test-Path -LiteralPath (Join-Path $engineRoot 'NOTICES.txt'))) {
+              throw 'The released engine bundle is incomplete'
+            }
+          } finally {
+            $removed = Start-Process -FilePath $uninstaller -ArgumentList "/S _?=$baseline" -WindowStyle Hidden -PassThru -Wait
+            if ($removed.ExitCode) { throw 'The baseline installer did not uninstall cleanly' }
+          }
+          exit 0
+      - name: Run Windows worker tests with the bundled engines
+        if: github.ref == 'refs/heads/qa/omnora-091-tool-registry'
+        shell: pwsh
+        run: |
+          $engineRoot = (Resolve-Path -LiteralPath 'build/qa-fixtures/engines').Path
+          $env:Path = "$engineRoot\ffmpeg;$engineRoot\tesseract;$env:Path"
+          $env:FORMABOX_SOFFICE = Join-Path $engineRoot 'libreoffice/program/soffice.com'
+          $env:TESSDATA_PREFIX = Join-Path $engineRoot 'tesseract/tessdata'
+          python -m pip install -e './worker[test]'
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m pytest -q -ra tests
+          exit $LASTEXITCODE
+      - name: Build and test the full installer without publishing
+        if: github.ref == 'refs/heads/qa/omnora-091-tool-registry'
+        shell: pwsh
+        run: |
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'NSIS/makensis.exe'
+          ./scripts/package-windows.ps1 -BuildDirectory build/desktop -Python (Get-Command python).Source -MakeNsis $compiler -QtPrefix $env:QT_ROOT_DIR -EngineBundleDirectory 'build/qa-fixtures/engines'
+          $setup = Get-ChildItem -LiteralPath 'build/installers' -Filter '*-Full-Setup.exe' -File
+          $env:FORMABOX_TEST_AUDIO = (Resolve-Path -LiteralPath 'build/qa-fixtures/speech-test.wav').Path
+          $env:FORMABOX_TEST_MODEL = (Resolve-Path -LiteralPath 'build/qa-fixtures/speech-model.bin').Path
+          ./scripts/test-windows-installer.ps1 -Setup $setup.FullName -ExpectBundledEngines
+

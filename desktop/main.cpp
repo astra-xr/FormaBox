@@ -445,11 +445,33 @@ static bool verifyStudio(QQmlApplicationEngine &engine, QObject *root, Controlle
     return invokeQml(dialog, "close") && evaluated;
 }
 
+static bool verifyToolCatalogueReload(Controller &controller, const QVariantList &initialTools)
+{
+    QEventLoop wait;
+    int updates = 0;
+    bool sameTools = true;
+    QObject::connect(&controller, &Controller::toolsChanged, &wait, [&] {
+        sameTools = sameTools && controller.tools() == initialTools;
+        if (++updates == 2)
+            wait.quit();
+    });
+    QTimer::singleShot(8000, &wait, &QEventLoop::quit);
+    controller.reload();
+    controller.reload();
+    controller.reload();
+    wait.exec();
+    return sameTools && updates == 2;
+}
+
 static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controller &controller)
 {
     if (root->property("title").toString() != QStringLiteral("万象 · Omnora"))
         return false;
     const auto tools = controller.tools();
+    if (!verifyToolCatalogueReload(controller, tools)) {
+        qWarning("Tool catalogue refresh changed the list or lost a pending refresh.");
+        return false;
+    }
     const auto findTool = [&](const QString &id) {
         for (const auto &tool : tools) {
             const auto spec = tool.toMap();

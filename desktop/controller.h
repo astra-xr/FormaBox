@@ -9,6 +9,7 @@
 #include <QTimer>
 #include <QJsonObject>
 #include <memory>
+#include "toolregistry.h"
 class Controller final : public QObject {
  Q_OBJECT
  Q_PROPERTY(QVariantList tools READ tools NOTIFY toolsChanged)
@@ -23,7 +24,7 @@ class Controller final : public QObject {
  Q_PROPERTY(bool hasBundledEngines READ hasBundledEngines CONSTANT)
 public:
  explicit Controller(QObject *parent=nullptr);
- QVariantList tools() const {return m_tools;}
+ QVariantList tools() const {return toolRegistry.tools();}
  QVariantList jobs() const {return m_jobs;}
  QString status() const {return m_status;}
  bool busy() const {return active>=0 || !pending.isEmpty();}
@@ -77,7 +78,8 @@ signals:
  void renamePreviewReady(QVariantList rows, QString plan, QString error);
 private:
  struct Request {int index; QJsonObject json;};
- QVariantList m_tools,m_jobs; QString m_status; QProcess catalogue,worker; QByteArray buffer; QQueue<Request> pending; int active=-1;
+ ToolRegistry toolRegistry;
+ QVariantList m_jobs; QString m_status; QProcess worker; QByteArray buffer; QQueue<Request> pending; int active=-1;
  QVariantList m_presets;
  QStringList m_favorites;
  const QVariantMap bundledEnginePaths;
@@ -94,7 +96,6 @@ private:
  QJsonObject inspectionRequest;
  QVariantMap candidateEngines;
  bool saveEngines = false;
- bool reloadPending = false;
  bool inspectionTimedOut = false;
  std::unique_ptr<QTemporaryDir> previewRoot;
  std::unique_ptr<QTemporaryDir> studioRoot;
