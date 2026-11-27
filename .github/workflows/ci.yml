@@ -21,14 +21,14 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
       - uses: jurplel/install-qt-action@v4
         with:
           version: '6.8.3'
           arch: win64_msvc2022_64
           cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
       - name: Build Omnora and verify the development launcher
         shell: pwsh
         run: |
@@ -46,6 +46,21 @@ jobs:
           $env:QT_FORCE_STDERR_LOGGING = '1'
           $process = Start-Process -FilePath (Resolve-Path 'build/desktop-check/Omnora.exe') -ArgumentList '--verify-runtime' -WindowStyle Hidden -PassThru -Wait
           exit $process.ExitCode
+      - name: Compile the installer template
+        shell: pwsh
+        run: |
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'NSIS/makensis.exe'
+          $fixture = New-Item -ItemType Directory -Path 'build/installer-check/payload'
+          Copy-Item -LiteralPath build/desktop-check/dist/Omnora.exe -Destination $fixture.FullName
+          $uninstall = Join-Path $fixture.Parent.FullName 'uninstall.nsh'
+          'Delete "$INSTDIR\Omnora.exe"' | Set-Content -LiteralPath $uninstall -Encoding utf8BOM
+          $setup = Join-Path $fixture.Parent.FullName 'Omnora-installer-check.exe'
+          $icon = (Resolve-Path 'desktop/assets/formabox.ico').Path
+          & $compiler /INPUTCHARSET UTF8 /WX "/DSETUP_EXE=$setup" /DFORMABOX_VERSION=0.9.0 "/DPAYLOAD=$($fixture.FullName)" "/DUNINSTALL_LIST=$uninstall" "/DFORMABOX_ICON=$icon" packaging/windows/installer.nsi
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          if ((Get-Item -LiteralPath $setup).VersionInfo.ProductName -ne '万象（Omnora）') {
+              throw 'Installer metadata does not match the application name'
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: omnora-windows-executables
