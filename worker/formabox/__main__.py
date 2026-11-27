@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 from .core import TOOLS, execute, emit, Cancelled, find_executable
 from . import imageops,pdfops,mediaops,fileops,textops,privacyops
+from . import studio_files, studio_images, studio_media, studio_pdf, studio_speech
 
 def engine_availability():
     return {
@@ -14,6 +15,9 @@ def engine_availability():
         'ffmpeg': find_executable('ffmpeg') is not None,
         'tesseract': find_executable('tesseract') is not None,
         'LibreOffice': textops.office_engine() is not None,
+        'whisper-cli': find_executable('whisper-cli') is not None,
+        'openpyxl': importlib.util.find_spec('openpyxl') is not None,
+        'py7zr': importlib.util.find_spec('py7zr') is not None,
     }
 
 def error_message(error, request):
@@ -44,13 +48,14 @@ def main():
     sub.add_parser('preview-pdf', help='从 stdin 读取页面工作台预览请求')
     sub.add_parser('preview-pdf-compression', help='从 stdin 读取 PDF 压缩预览请求')
     sub.add_parser('preview-rename', help='从 stdin 读取批量改名预览请求')
+    sub.add_parser('preview-tool', help='从 stdin 读取选区或媒体预览请求')
     run=sub.add_parser('run',help='执行单个工具或工作流')
     run.add_argument('--request',required=True,help='JSON 请求路径，或 - 从 stdin 读取')
     args=parser.parse_args()
     if args.command=='doctor':
         print(json.dumps(engine_availability(),ensure_ascii=False))
         return 0
-    if args.command in ('check-engines', 'preview-pdf', 'preview-pdf-compression', 'preview-rename'):
+    if args.command in ('check-engines', 'preview-pdf', 'preview-pdf-compression', 'preview-rename', 'preview-tool'):
         try:
             if args.command == 'preview-pdf':
                 from .pdfworkbench import preview_pages
@@ -60,6 +65,9 @@ def main():
                 result = preview_compression(json.load(sys.stdin.buffer))
             elif args.command == 'preview-rename':
                 result = fileops.preview_rename(json.load(sys.stdin.buffer))
+            elif args.command == 'preview-tool':
+                from .studio_preview import preview_tool
+                result = preview_tool(json.load(sys.stdin.buffer))
             else:
                 from .engines import check_engines
                 result = check_engines()

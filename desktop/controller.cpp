@@ -1,5 +1,6 @@
 #include "controller.h"
 #include <QCoreApplication>
+#include <QClipboard>
 #include <QStandardPaths>
 #include <QDir>
 #include <QFile>
@@ -11,9 +12,12 @@
 #include <QDesktopServices>
 #include <QUrl>
 #include <QSettings>
+#include <QSet>
 #include <QSaveFile>
 #include <QStyleHints>
 #include <QTimer>
+#include <QUuid>
+#include <QRegularExpression>
 #include <algorithm>
 
 namespace {
@@ -49,7 +53,7 @@ bool canOpenResult(const QFileInfo &file) {
  const auto suffix = file.suffix().toLower();
  static const QStringList formats = {"pdf", "png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff", "avif",
      "ico", "docx", "xlsx", "pptx", "rtf", "txt", "json", "csv", "zip", "mp4", "mkv", "webm",
-     "mov", "avi", "srt", "vtt", "mp3", "wav", "flac", "ogg", "m4a", "aac", "opus"};
+     "mov", "avi", "srt", "vtt", "mp3", "wav", "flac", "ogg", "m4a", "aac", "opus", "html", "7z", "tar", "gz"};
  return file.isDir() || formats.contains(suffix);
 }
 
@@ -63,11 +67,19 @@ QVariantMap resultRow(const QFileInfo &file, const QVariantMap &details = {}) {
  }
  return row;
 }
+
+QString batchSession(const QJsonObject &request) {
+ if (request.value("tool").toString() != "folder.batch") return {};
+ const auto id = request.value("params").toObject().value("session").toString();
+ static const QRegularExpression pattern("^[a-f0-9]{32}$");
+ return pattern.match(id).hasMatch() ? id : QString{};
+}
 }
 
 Controller::Controller(QObject *parent):QObject(parent), bundledEnginePaths(detectBundledEngines()){
  loadHistory();
  m_presets = QSettings().value("tools/presets").toList();
+ m_favorites = QSettings().value("tools/favorites").toStringList();
  connect(QGuiApplication::styleHints(),&QStyleHints::colorSchemeChanged,this,&Controller::systemThemeChanged);
  connect(&catalogue,&QProcess::finished,this,[this](int code,QProcess::ExitStatus es){
   const auto doc=QJsonDocument::fromJson(catalogue.readAllStandardOutput());
@@ -325,6 +337,54 @@ void Controller::previewRename(const QVariantList &inputs, const QVariantMap &pa
  startInspection("preview-rename", 60000);
 }
 
+bool Controller::setFavorites(const QStringList &ids) {
+ if (ids.size() > 12 || QSet<QString>(ids.cbegin(), ids.cend()).size() != ids.size()) return false;
+ for (const auto &id : ids)
+  if (std::none_of(m_tools.cbegin(), m_tools.cend(), [&](const auto &entry) {
+       return entry.toMap().value("id").toString() == id;
+      })) return false;
+ QSettings settings;
+ settings.setValue("tools/favorites", ids);
+ settings.sync();
+ if (settings.status() != QSettings::NoError) return false;
+ m_favorites = ids;
+ emit favoritesChanged();
+ return true;
+}
+
+void Controller::previewStudio(const QString &tool, const QVariantList &inputs, const QVariantMap &params,
+                               const QVariantMap &options) {
+ if (inspecting()) return;
+ if (!studioRoot) studioRoot = std::make_unique<QTemporaryDir>();
+ if (studioRoot->isValid())
+  studioBatch = std::make_unique<QTemporaryDir>(studioRoot->filePath("preview-XXXXXX"));
+ if (!studioBatch || !studioBatch->isValid()) {
+  emit studioPreviewReady({}, QStringLiteral("无法创建预览目录"));
+  return;
+ }
+ auto request = options;
+ request.insert("tool", tool);
+ request.insert("inputs", inputs);
+ request.insert("params", params);
+ request.insert("output", studioBatch->path());
+ inspectionRequest = QJsonObject::fromVariantMap(request);
+ startInspection("preview-tool", 180000);
+}
+
+void Controller::clearStudioPreview() {
+ if (inspectionCommand != "preview-tool") studioRoot.reset();
+}
+
+void Controller::playStudioSample(const QUrl &url) {
+ const QFileInfo file(url.toLocalFile());
+ if (studioRoot && file.suffix() == "wav" && isTaskOutput(QFileInfo(studioRoot->path()), file))
+  QDesktopServices::openUrl(url);
+}
+
+void Controller::copyText(const QString &text) {
+ if (text.size() <= 500000) QGuiApplication::clipboard()->setText(text);
+}
+
 void Controller::previewPdfCompression(const QVariantList &inputs, const QString &pages, int targetKiB, int page) {
  if (inspecting()) return;
  compressionPreview = std::make_unique<QTemporaryDir>();
@@ -404,6 +464,7 @@ void Controller::finishInspection(bool exited) {
  const bool pdf = inspectionCommand == "preview-pdf";
  const bool compression = inspectionCommand == "preview-pdf-compression";
  const bool rename = inspectionCommand == "preview-rename";
+ const bool studio = inspectionCommand == "preview-tool";
  QVariantList pages;
  QVariantMap checks;
  if (pdf) {
@@ -450,6 +511,37 @@ void Controller::finishInspection(bool exited) {
   checks = result.toObject().toVariantMap();
   if (error.isEmpty() && (checks.value("rows").toList().isEmpty() || checks.value("plan").toString().size() != 64))
    error = QStringLiteral("改名预览结果无效");
+ } else if (studio) {
+  checks = result.toObject().toVariantMap();
+  const auto previewUrl = [&](const QVariant &entry) {
+   const auto name = entry.toString();
+   const QFileInfo file(studioBatch->filePath(name));
+   if (name.isEmpty() || QFileInfo(name).fileName() != name ||
+       !isTaskOutput(QFileInfo(studioBatch->path()), file) || !file.isFile()) {
+    error = QStringLiteral("预览文件无效");
+    return QUrl{};
+   }
+   return QUrl::fromLocalFile(file.filePath());
+  };
+  for (const auto *key : {"image", "sample"}) {
+   if (checks.contains(key)) checks[key] = previewUrl(checks[key]);
+  }
+  if (checks.contains("pictures")) {
+   QVariantList pictures;
+   for (const auto &file : checks.value("pictures").toList()) pictures.append(previewUrl(file));
+   checks["pictures"] = pictures;
+  }
+  if (checks.contains("rows")) {
+   QVariantList rows;
+   for (const auto &value : checks.value("rows").toList()) {
+    auto row = value.toMap();
+    if (row.contains("thumbnail")) row["thumbnail"] = previewUrl(row["thumbnail"]);
+    rows.append(row);
+   }
+   checks["rows"] = rows;
+  }
+  if (error.isEmpty()) studioBatch->setAutoRemove(false);
+  studioBatch.reset();
  } else {
   checks = result.toObject().toVariantMap();
   if (error.isEmpty() && saveEngines) {
@@ -483,6 +575,8 @@ void Controller::finishInspection(bool exited) {
   emit pdfCompressionReady(checks, error);
  else if (rename)
   emit renamePreviewReady(checks.value("rows").toList(), checks.value("plan").toString(), error);
+ else if (studio)
+  emit studioPreviewReady(checks, error);
  else
   emit enginesChecked(checks, error);
 }
@@ -492,7 +586,27 @@ void Controller::submit(QString tool,QVariantList inputs,QVariantMap params,QStr
  enqueue(QJsonObject::fromVariantMap({{"tool",tool},{"inputs",inputs},{"params",params},{"output",output}}),title);
 }
 void Controller::submitWorkflow(QVariantList steps,QVariantList inputs,QString output){if(steps.isEmpty()||inputs.isEmpty()||output.trimmed().isEmpty()){setStatus(QStringLiteral("请提供工作流、输入及输出目录"));return;}enqueue(QJsonObject::fromVariantMap({{"steps",steps},{"inputs",inputs},{"output",output}}),QStringLiteral("工作流 (%1 步)").arg(steps.size()));}
-void Controller::enqueue(QJsonObject json,QString title){int i=m_jobs.size();m_jobs.append(QVariantMap{{"title",title},{"state","等待"},{"progress",0.0},{"message",""},{"directory",""}});pending.enqueue({i,std::move(json)});emit jobsChanged();startNext();}
+void Controller::enqueue(QJsonObject json, QString title) {
+ if (json.value("tool").toString() == "folder.batch") {
+  if (batchSession(json).isEmpty()) {
+   auto params = json.value("params").toObject();
+   params["session"] = QUuid::createUuid().toString(QUuid::Id128);
+   json["params"] = params;
+  }
+  QSettings settings;
+  settings.setValue("resume/" + batchSession(json), json.toVariantMap());
+  settings.sync();
+  if (settings.status() != QSettings::NoError) {
+   setStatus(QStringLiteral("无法记录续跑任务"));
+   return;
+  }
+ }
+ const int index = m_jobs.size();
+ m_jobs.append(QVariantMap{{"title", title}, {"state", "等待"}, {"progress", 0.0}, {"message", ""}, {"directory", ""}});
+ pending.enqueue({index, std::move(json)});
+ emit jobsChanged();
+ startNext();
+}
 void Controller::update(int i,QVariantMap values){if(i<0||i>=m_jobs.size())return;auto row=m_jobs[i].toMap();for(auto it=values.begin();it!=values.end();++it)row.insert(it.key(),it.value());m_jobs[i]=row;emit jobsChanged();}
 void Controller::startNext(){
  if(active>=0||pending.isEmpty())return;
@@ -566,10 +680,18 @@ void Controller::finishJob(QVariantMap values){
  const auto usesPassword=[](const QJsonObject &request){return request.value("params").toObject().contains("password");};
  bool sensitive=usesPassword(activeRequest);
  for(const auto &step:activeRequest.value("steps").toArray())sensitive=sensitive||usesPassword(step.toObject());
- if(!sensitive&&values.value("state").toString()=="失败"){
+ const auto session = batchSession(activeRequest);
+ const auto state = values.value("state").toString();
+ if (!session.isEmpty() && state == "完成") {
+  QSettings settings;
+  settings.remove("resume/" + session);
+  settings.sync();
+ }
+ if (!sensitive && (state == "失败" || (!session.isEmpty() && state == "已取消"))) {
   activeRequest.remove("cancel");
   retryRequests.insert(active,activeRequest);
   values.insert("canRetry",true);
+  values.insert("canResume", !session.isEmpty());
  }
  const int finished=active;
  active=-1;
@@ -601,6 +723,24 @@ bool Controller::writeWorkflow(const QUrl &url,const QString &text){
  return true;
 }
 void Controller::openFolder(QString path){if(QFileInfo(path).isDir())QDesktopServices::openUrl(QUrl::fromLocalFile(path));}
-void Controller::loadHistory(){QSettings s; m_jobs=s.value("jobs").toList();}
+void Controller::loadHistory() {
+ QSettings settings;
+ m_jobs = settings.value("jobs").toList();
+ settings.beginGroup("resume");
+ for (const auto &key : settings.childKeys()) {
+  const auto request = QJsonObject::fromVariantMap(settings.value(key).toMap());
+  if (batchSession(request) != key || request.value("output").toString().isEmpty()) continue;
+  retryRequests.insert(m_jobs.size(), request);
+  m_jobs.append(QVariantMap{{"title", "文件夹批处理"}, {"state", "可继续"}, {"progress", 0.0},
+                           {"message", "从已保存的结果接着处理"}, {"canResume", true}, {"canRetry", true}});
+ }
+}
 void Controller::saveHistory(){QVariantList history;for(auto v:m_jobs){auto m=v.toMap();m.remove("canRetry");if(m.value("state").toString()!="等待"&&m.value("state").toString()!="运行中")history.append(m);}while(history.size()>100)history.removeFirst();QSettings s;s.setValue("jobs",history);}
-void Controller::clearHistory(){if(busy())return;m_jobs.clear();retryRequests.clear();saveHistory();emit jobsChanged();}
+void Controller::clearHistory(){
+ if(busy())return;
+ m_jobs.clear();
+ retryRequests.clear();
+ QSettings().remove("resume");
+ saveHistory();
+ emit jobsChanged();
+}

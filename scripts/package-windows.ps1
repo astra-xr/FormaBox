@@ -25,7 +25,8 @@ if ($EngineBundleDirectory) {
     }
     foreach ($required in @('ffmpeg/ffmpeg.exe', 'tesseract/tesseract.exe',
             'tesseract/tessdata/eng.traineddata', 'tesseract/tessdata/chi_sim.traineddata',
-            'libreoffice/program/soffice.com', 'libreoffice/program/soffice.bin', 'NOTICES.txt')) {
+            'libreoffice/program/soffice.com', 'libreoffice/program/soffice.bin',
+            'whisper/whisper-cli.exe', 'whisper/whisper.dll', 'whisper/ggml.dll', 'NOTICES.txt')) {
         $file = Join-Path $bundle.FullName $required
         if (!(Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file).Length -eq 0) {
             throw "The engine bundle is missing $required"
@@ -74,6 +75,11 @@ try {
         $destination = Join-Path $payload 'engines'
         & "$env:SystemRoot\System32\robocopy.exe" $bundle.FullName $destination /E /XJ /R:0 /W:0 /NFL /NDL /NJH /NJS /NP
         if ($LASTEXITCODE -ge 8) { throw 'Engine bundle staging failed' }
+        $speech = Join-Path $destination 'whisper'
+        $openMP = Join-Path (Split-Path $CompilerRuntime) 'Microsoft.VC143.OpenMP/vcomp140.dll'
+        if (!(Test-Path -LiteralPath $openMP -PathType Leaf)) { throw 'The x64 Visual C++ OpenMP runtime is missing' }
+        $crt | Copy-Item -Destination $speech
+        Copy-Item -LiteralPath $openMP -Destination $speech
     }
 
     $variant = if ($bundle) { '-Full' } else { '' }

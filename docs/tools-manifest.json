@@ -1554,5 +1554,462 @@
     "maximum": 0,
     "description": "",
     "engines": []
+  },
+  {
+    "id": "file.archive",
+    "category": "文件",
+    "label": "归档浏览、打包与选取解压",
+    "params": [
+      {
+        "key": "operation",
+        "label": "操作",
+        "default": "提取",
+        "kind": "choice",
+        "choices": [
+          "提取",
+          "浏览",
+          "创建 7z",
+          "创建 TAR",
+          "创建 TAR.GZ",
+          "创建 GZ"
+        ]
+      },
+      {
+        "key": "max_mib",
+        "label": "提取大小上限 MiB",
+        "default": "2048",
+        "kind": "number",
+        "choices": []
+      },
+      {
+        "key": "selected",
+        "label": "归档成员",
+        "default": "all",
+        "kind": "internal",
+        "choices": []
+      }
+    ],
+    "minimum": 1,
+    "maximum": 1,
+    "description": "预览 7z、TAR、TAR.GZ、GZ 或 ZIP，选择成员后安全解压。",
+    "engines": [
+      "py7zr"
+    ]
+  },
+  {
+    "id": "folder.batch",
+    "category": "文件",
+    "label": "文件夹批处理与续跑",
+    "params": [
+      {
+        "key": "operation",
+        "label": "处理规则",
+        "default": "转换为 JPEG",
+        "kind": "choice",
+        "choices": [
+          "转换为 JPEG",
+          "图片压到 100 KiB",
+          "Office 转 PDF",
+          "视频转换为 MP4",
+          "音频转换为 MP3"
+        ]
+      },
+      {
+        "key": "suffixes",
+        "label": "仅处理这些后缀（逗号分隔，空=全部适用）",
+        "default": "",
+        "kind": "text",
+        "choices": []
+      },
+      {
+        "key": "recursive",
+        "label": "包含子目录",
+        "default": "true",
+        "kind": "bool",
+        "choices": []
+      },
+      {
+        "key": "preserve",
+        "label": "保留子目录结构",
+        "default": "true",
+        "kind": "bool",
+        "choices": []
+      },
+      {
+        "key": "fingerprint",
+        "label": "已预览文件清单",
+        "default": "",
+        "kind": "internal",
+        "choices": []
+      },
+      {
+        "key": "session",
+        "label": "续跑任务编号",
+        "default": "",
+        "kind": "internal",
+        "choices": []
+      }
+    ],
+    "minimum": 1,
+    "maximum": 1,
+    "description": "预览匹配的文件并按规则处理，每个文件独立提交。重启后可以续跑。",
+    "engines": []
+  },
+  {
+    "id": "image.id_photo",
+    "category": "图片",
+    "label": "报名照与冲印排版",
+    "params": [
+      {
+        "key": "size",
+        "label": "规格",
+        "default": "一寸",
+        "kind": "choice",
+        "choices": [
+          "一寸",
+          "二寸",
+          "自定义"
+        ]
+      },
+      {
+        "key": "width_mm",
+        "label": "自定义宽（毫米）",
+        "default": "25",
+        "kind": "number",
+        "choices": []
+      },
+      {
+        "key": "height_mm",
+        "label": "自定义高（毫米）",
+        "default": "35",
+        "kind": "number",
+        "choices": []
+      },
+      {
+        "key": "dpi",
+        "label": "分辨率 DPI",
+        "default": "300",
+        "kind": "number",
+        "choices": []
+      },
+      {
+        "key": "target_kib",
+        "label": "报名照大小上限 KiB（0=不限）",
+        "default": "97",
+        "kind": "number",
+        "choices": []
+      },
+      {
+        "key": "region",
+        "label": "选区（相对比例）",
+        "default": "0,0,1,1",
+        "kind": "internal",
+        "choices": []
+      }
+    ],
+    "minimum": 1,
+    "maximum": 1,
+    "description": "按毫米规格制作 JPEG，并生成带裁切线的 6 英寸冲印 PDF。",
+    "engines": []
+  },
+  {
+    "id": "image.region_ocr",
+    "category": "图片",
+    "label": "选区文字识别",
+    "params": [
+      {
+        "key": "language",
+        "label": "识别语言",
+        "default": "chi_sim+eng",
+        "kind": "text",
+        "choices": []
+      },
+      {
+        "key": "region",
+        "label": "选区（相对比例）",
+        "default": "0,0,1,1",
+        "kind": "internal",
+        "choices": []
+      }
+    ],
+    "minimum": 1,
+    "maximum": 1,
+    "description": "在图片预览中框选一块区域，用本机 OCR 识别文字。",
+    "engines": [
+      "tesseract"
+    ]
+  },
+  {
+    "id": "video.target_size",
+    "category": "视频",
+    "label": "视频按目标大小压缩",
+    "params": [
+      {
+        "key": "target_mib",
+        "label": "每段视频大小上限 MiB",
+        "default": "20",
+        "kind": "number",
+        "choices": []
+      },
+      {
+        "key": "height",
+        "label": "最大高度",
+        "default": "720",
+        "kind": "number",
+        "choices": []
+      }
+    ],
+    "minimum": 1,
+    "maximum": 8,
+    "description": "按时长分配码率并进行两遍编码，对实际生成的 MP4 复核大小。",
+    "engines": [
+      "ffmpeg"
+    ]
+  },
+  {
+    "id": "video.timeline",
+    "category": "视频",
+    "label": "视频可视化剪切与拼接",
+    "params": [
+      {
+        "key": "size",
+        "label": "导出尺寸",
+        "default": "1280x720",
+        "kind": "choice",
+        "choices": [
+          "640x360",
+          "1280x720",
+          "1920x1080"
+        ]
+      },
+      {
+        "key": "clips",
+        "label": "片段配置",
+        "default": "[]",
+        "kind": "internal",
+        "choices": []
+      }
+    ],
+    "minimum": 1,
+    "maximum": 12,
+    "description": "预览每个切点并调整顺序，统一为同一尺寸和帧率后导出 MP4。",
+    "engines": [
+      "ffmpeg"
+    ]
+  },
+  {
+    "id": "video.contact_sheet",
+    "category": "视频",
+    "label": "视频缩略图总览",
+    "params": [
+      {
+        "key": "frames",
+        "label": "抽取画面数",
+        "default": "12",
+        "kind": "number",
+        "choices": []
+      },
+      {
+        "key": "columns",
+        "label": "列数",
+        "default": "4",
+        "kind": "number",
+        "choices": []
+      }
+    ],
+    "minimum": 1,
+    "maximum": 8,
+    "description": "抽取分布在视频各处的画面，与时间戳排成一张图片。",
+    "engines": [
+      "ffmpeg"
+    ]
+  },
+  {
+    "id": "audio.silence",
+    "category": "音频",
+    "label": "音频静音检测与编辑",
+    "params": [
+      {
+        "key": "threshold",
+        "label": "静音阈值 dB",
+        "default": "-40",
+        "kind": "number",
+        "choices": []
+      },
+      {
+        "key": "minimum",
+        "label": "最短静音秒数",
+        "default": "0.8",
+        "kind": "number",
+        "choices": []
+      },
+      {
+        "key": "mode",
+        "label": "操作",
+        "default": "检测报告",
+        "kind": "choice",
+        "choices": [
+          "检测报告",
+          "删除选中",
+          "缩短选中"
+        ]
+      },
+      {
+        "key": "keep",
+        "label": "缩短后保留秒数",
+        "default": "0.25",
+        "kind": "number",
+        "choices": []
+      },
+      {
+        "key": "selected",
+        "label": "静音段选择",
+        "default": "all",
+        "kind": "internal",
+        "choices": []
+      }
+    ],
+    "minimum": 1,
+    "maximum": 1,
+    "description": "识别较长停顿，试听后选择删除或缩短，输出 WAV。",
+    "engines": [
+      "ffmpeg"
+    ]
+  },
+  {
+    "id": "pdf.clean_scan",
+    "category": "PDF",
+    "label": "扫描件整理",
+    "params": [
+      {
+        "key": "ocr",
+        "label": "生成可搜索文字层",
+        "default": "true",
+        "kind": "bool",
+        "choices": []
+      },
+      {
+        "key": "language",
+        "label": "OCR 语言",
+        "default": "chi_sim+eng",
+        "kind": "text",
+        "choices": []
+      },
+      {
+        "key": "remove",
+        "label": "排除页码",
+        "default": "",
+        "kind": "internal",
+        "choices": []
+      }
+    ],
+    "minimum": 1,
+    "maximum": 100,
+    "description": "纠偏、去暗边，预览空白页后选择保留范围，再合成 PDF。",
+    "engines": [
+      "pypdfium2",
+      "tesseract"
+    ]
+  },
+  {
+    "id": "pdf.compare",
+    "category": "PDF",
+    "label": "PDF 版本对比",
+    "params": [],
+    "minimum": 2,
+    "maximum": 2,
+    "description": "并列比较两份 PDF 的可视页面，识别插入、删除和修改并生成可跳转报告。",
+    "engines": [
+      "pypdfium2"
+    ]
+  },
+  {
+    "id": "pdf.table_xlsx",
+    "category": "PDF",
+    "label": "PDF 表格转 Excel",
+    "params": [
+      {
+        "key": "page",
+        "label": "第几页",
+        "default": "1",
+        "kind": "number",
+        "choices": []
+      },
+      {
+        "key": "columns",
+        "label": "列边界百分比（可选，如 25,50,75）",
+        "default": "",
+        "kind": "text",
+        "choices": []
+      },
+      {
+        "key": "region",
+        "label": "选区（相对比例）",
+        "default": "0,0,1,1",
+        "kind": "internal",
+        "choices": []
+      }
+    ],
+    "minimum": 1,
+    "maximum": 1,
+    "description": "选定页码和表格区域，预览识别内容后导出 Excel。现支持规则的文字表格。",
+    "engines": [
+      "pypdfium2",
+      "openpyxl"
+    ]
+  },
+  {
+    "id": "pdf.redact",
+    "category": "隐私",
+    "label": "PDF 永久遮盖",
+    "params": [
+      {
+        "key": "regions",
+        "label": "页面选区",
+        "default": "[]",
+        "kind": "internal",
+        "choices": []
+      }
+    ],
+    "minimum": 1,
+    "maximum": 1,
+    "description": "在预览画面框选需遮盖处。导出为重新渲染的 PDF，删除源文字层、附件和隐藏对象。",
+    "engines": [
+      "pypdfium2"
+    ]
+  },
+  {
+    "id": "audio.transcribe",
+    "category": "音频",
+    "label": "本地语音转文字与字幕",
+    "params": [
+      {
+        "key": "language",
+        "label": "语言",
+        "default": "auto",
+        "kind": "choice",
+        "choices": [
+          "auto",
+          "zh",
+          "en",
+          "ja",
+          "ko"
+        ]
+      },
+      {
+        "key": "download_model",
+        "label": "允许首次下载模型（约 75 MiB）",
+        "default": "false",
+        "kind": "bool",
+        "choices": []
+      }
+    ],
+    "minimum": 1,
+    "maximum": 8,
+    "description": "在本机识别音频或视频中的语音，导出 TXT 和 SRT。仅首次下载公开模型需要联网。",
+    "engines": [
+      "ffmpeg",
+      "whisper-cli"
+    ]
   }
 ]

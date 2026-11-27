@@ -18,7 +18,7 @@ ApplicationWindow {
     readonly property color rim: dark ? "#3a4d60" : "#c8d4e0"
     property string category: "常用"
     property bool workflowExpanded: false
-    property bool taskCenterExpanded: false
+    property bool taskCenterExpanded: backend.jobs.some(job => job.canResume === true)
     readonly property string searchQuery: search.text.trim().toLowerCase()
     readonly property var visibleTools: filterTools(category, searchQuery)
     readonly property var toolSections: [
@@ -31,10 +31,15 @@ ApplicationWindow {
         {title: "文件与隐私", categories: ["文件", "隐私"]},
         {title: "全部工具"}
     ]
-    readonly property var featuredTools: [
+    readonly property var defaultFavorites: [
         "doc.pdf", "pdf.merge", "pdf.split", "pdf.compress_target", "pdf.ocr", "image.compress",
         "image.convert", "image.ocr", "video.convert", "video.frames", "audio.convert", "file.rename"
     ]
+    readonly property var featuredTools: backend.favorites.length ? backend.favorites : defaultFavorites
+    readonly property var previewTools: ["image.id_photo", "image.region_ocr", "pdf.redact", "pdf.clean_scan",
+                                        "pdf.table_xlsx", "video.timeline", "audio.silence", "file.archive", "folder.batch"]
+    readonly property bool hasStudioPreview: selected !== null && previewTools.includes(selected.id) &&
+                                            (selected.id !== "file.archive" || !String(params.operation).startsWith("创建"))
     property var selected: null
     property var inputs: Array.from(launchFiles)
     property var params: ({})
@@ -69,7 +74,7 @@ ApplicationWindow {
     }) : []
     readonly property bool selectedReady: selected !== null && !(selected.missing_engines || []).length
     readonly property bool inputCountValid: countFits(selected)
-    readonly property bool canAddStep: selected !== null && steps.length < 32
+    readonly property bool canAddStep: selected !== null && !previewTools.includes(selected.id) && steps.length < 32
                                        && !selected.params.some(p => p.kind === "password")
     readonly property var workflowTools: steps.map(step => backend.tools.find(tool => tool.id === step.tool))
     readonly property var workflowMissing: workflowTools.reduce((missing, tool) => {
@@ -165,6 +170,12 @@ ApplicationWindow {
         renamePreview.showPreview(inputs, params, output.text)
     }
 
+    function openStudioPreview() {
+        if (!selected || backend.inspecting)
+            return
+        studioPreview.show(selected, inputs, params, output.text)
+    }
+
     function recommendationsFor(paths) {
         if (!paths.length)
             return []
@@ -176,19 +187,21 @@ ApplicationWindow {
         if (suffixes.every(suffix => office.includes(suffix)))
             ids = ["doc.pdf"]
         else if (suffixes.every(suffix => workbenchImages.includes(suffix)))
-            ids = ["image.compress", "pdf.from_images", "image.ocr"]
+            ids = ["image.compress", "pdf.from_images", "image.ocr", "image.id_photo", "image.region_ocr"]
         else if (suffixes.every(suffix => suffix === "pdf"))
-            ids = ["pdf.compose", "pdf.compress_target", "pdf.text", "pdf.number", "pdf.watermark", "pdf.crop"]
+            ids = ["pdf.compose", "pdf.compress_target", "pdf.text", "pdf.number", "pdf.watermark", "pdf.crop", "pdf.clean_scan", "pdf.compare"]
         else if (suffixes.every(suffix => suffix === "pdf" || workbenchImages.includes(suffix)))
             ids = ["pdf.compose"]
         else if (suffixes.every(suffix => video.includes(suffix)))
-            ids = ["video.convert", "video.compress", "video.frames", "audio.convert"]
+            ids = ["video.convert", "video.target_size", "video.frames", "audio.convert", "video.timeline"]
         else if (suffixes.every(suffix => suffix === "srt" || suffix === "vtt"))
             ids = ["subtitle.convert", "subtitle.shift", "subtitle.transcript"]
         else if (suffixes.every(suffix => audio.includes(suffix)))
-            ids = ["audio.convert", "audio.concat"]
-        else if (suffixes.every(suffix => suffix === "zip"))
-            ids = ["file.unzip"]
+            ids = ["audio.convert", "audio.concat", "audio.silence", "audio.transcribe"]
+        else if (suffixes.every(suffix => ["zip", "7z", "tar", "tgz", "gz"].includes(suffix)))
+            ids = ["file.archive", "file.unzip"].filter(id => id !== "file.unzip" || suffixes.every(suffix => suffix === "zip"))
+        else if (suffixes.length === 1 && suffixes[0] === "")
+            ids = ["folder.batch"]
         else if (suffixes.every(suffix => suffix === "txt"))
             ids = ["text.clean", "text.encoding"]
 
@@ -377,6 +390,8 @@ ApplicationWindow {
         }
     }
     RenamePreview { id: renamePreview; objectName: "renamePreview"; controller: backend }
+    StudioPreview { id: studioPreview; controller: backend }
+    Favorites { id: favorites; controller: backend; defaults: root.defaultFavorites }
     TaskResults {
         id: taskResults
         objectName: "taskResults"
@@ -491,7 +506,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.minimumWidth: brand.implicitWidth
-                enabled: !pdfWorkbench.visible && !presetManager.visible && !renamePreview.visible &&
+                enabled: !pdfWorkbench.visible && !presetManager.visible && !renamePreview.visible && !studioPreview.visible && !favorites.visible &&
                          !taskResults.visible && !(engineSettings.item && engineSettings.item.visible)
                 RowLayout {
                     id: brand
@@ -685,6 +700,12 @@ ApplicationWindow {
                     font.weight: Font.DemiBold
                 }
                 Item { Layout.fillWidth: true }
+                GlowButton {
+                    visible: root.category === "常用" && !root.searchQuery
+                    compact: true
+                    text: "编辑常用"
+                    onClicked: favorites.open()
+                }
                 Label { text: toolsView.count + " 个工具"; color: root.muted; font.pixelSize: 12 }
             }
             Panel { Layout.fillWidth: true; Layout.fillHeight: true
@@ -760,7 +781,7 @@ ApplicationWindow {
                                 visible: modelData.state === "运行中" || modelData.state === "完成"
                                 Layout.preferredWidth: 75
                             }
-                            GlowButton { text: "重试"; visible: modelData.canRetry === true; onClicked: backend.retry(index) }
+                            GlowButton { text: modelData.canResume ? "继续批处理" : "重试"; visible: modelData.canRetry === true; onClicked: backend.retry(index) }
                             GlowButton { text: modelData.directory?"查看结果":"取消"; visible: !!modelData.directory||modelData.state==="运行中"||modelData.state==="等待"; onClicked: modelData.directory?taskResults.showJob(index, modelData.directory):backend.cancel(index) }
                         }
                         ScrollBar.vertical: ScrollBar {}
@@ -811,13 +832,18 @@ ApplicationWindow {
                     Label { text: "输出目录"; color: root.ink; font.bold: true }
                     RowLayout { Layout.fillWidth: true; TextField { id: output; objectName: "outputDirectory"; text: backend.outputDefault; Layout.fillWidth: true } GlowButton { compact: true; text:"…"; Accessible.name: "选择输出目录"; onClicked: outputFolder.open() } }
                     GlowButton {
-                        text: root.selected && root.selected.id === "file.rename" ? "预览重命名" : "加入任务队列"
+                        text: root.selected && root.selected.id === "file.rename" ? "预览重命名" :
+                              root.hasStudioPreview ? "打开预览" : "加入任务队列"
                         primary: true; centered: true; Layout.fillWidth: true
                         enabled: root.selectedReady && root.inputCountValid && output.text.trim().length > 0
                         onClicked: {
                             root.workflowNotice = ""
                             if (root.selected.id === "file.rename") {
                                 root.openRenamePreview()
+                                return
+                            }
+                            if (root.hasStudioPreview) {
+                                root.openStudioPreview()
                                 return
                             }
                             backend.submit(root.selected.id, root.inputs, root.params, output.text)
@@ -828,7 +854,8 @@ ApplicationWindow {
                     }
                     GlowButton { text: "添加到工作流"; Layout.fillWidth: true; enabled: root.canAddStep; onClicked: root.addStep()
                         ToolTip.visible: hovered && root.selected !== null && !root.canAddStep && root.steps.length < 32
-                        ToolTip.text: "密码工具无法保存到工作流"
+                        ToolTip.text: root.selected && root.previewTools.includes(root.selected.id) ?
+                                          "此工具需要单独确认预览" : "密码工具无法保存到工作流"
                     }
                     GlowButton {
                         objectName: "workflowToggle"

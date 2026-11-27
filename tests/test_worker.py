@@ -7,6 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 from pypdf import PdfReader,PdfWriter
 from formabox.core import execute,Cancelled,TOOLS
 from formabox import imageops,pdfops,mediaops,fileops,textops,privacyops
+from formabox import studio_files, studio_images, studio_media, studio_pdf, studio_speech
 
 def run(tmp,tool,inputs,params=None):
     return execute(dict(tool=tool,inputs=[str(i) for i in inputs],params=params or {},output=str(tmp/'out')),lambda *a,**kw:None)
@@ -407,6 +408,7 @@ def test_windows_bundled_engines_are_found_and_can_be_overridden(tmp_path, monke
         'ffmpeg': 'FORMABOX_FFMPEG',
         'tesseract': 'FORMABOX_TESSERACT',
         'soffice': 'FORMABOX_SOFFICE',
+        'whisper-cli': 'FORMABOX_WHISPER',
     }
     paths = {}
     for name, relative in core.BUNDLED_EXECUTABLES.items():
@@ -417,6 +419,7 @@ def test_windows_bundled_engines_are_found_and_can_be_overridden(tmp_path, monke
         paths[name] = executable
     assert Path(core.find_executable('ffmpeg')) == paths['ffmpeg']
     assert Path(core.find_executable('tesseract')) == paths['tesseract']
+    assert Path(core.find_executable('whisper-cli')) == paths['whisper-cli']
     assert Path(textops.office_engine()) == paths['soffice']
 
     data = paths['tesseract'].parent / 'tessdata'

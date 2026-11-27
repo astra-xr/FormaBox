@@ -4,6 +4,7 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -13,6 +14,7 @@ import zipfile
 
 from PIL import Image, ImageDraw, ImageFont, PngImagePlugin
 from pypdf import PdfReader, PdfWriter
+from openpyxl import load_workbook
 
 from formabox.__main__ import engine_availability
 from formabox.core import TOOLS, exe
@@ -35,6 +37,13 @@ def image_modified(path):
 
 def pdf_pages(path):
     return len(PdfReader(path).pages)
+
+def workbook_rows(path):
+    book = load_workbook(path, read_only=True)
+    try:
+        return list(book.active.values)
+    finally:
+        book.close()
 
 
 def media_test(path, stream):
@@ -127,6 +136,10 @@ def run_suite(root):
         subprocess.run([exe('ffmpeg'), '-v', 'error', '-i', str(second_wav), str(second_audio)],
                        check=True, capture_output=True)
     entries = {}
+    silence_sample = samples / '停顿.wav'
+    with wave.open(str(silence_sample), 'wb') as stream:
+        stream.setparams((1, 2, 16000, 0, 'NONE', 'not compressed'))
+        stream.writeframes(b'\x10\x1f'*8000 + b'\0\0'*16000 + b'\x10\x1f'*8000)
 
     def check(tool, inputs, verify, params=None):
         declared = TOOLS[tool][0]['engines']
@@ -181,7 +194,7 @@ def run_suite(root):
     locked = check('pdf.encrypt', [pdf], lambda p: PdfReader(p[0]).is_encrypted, pw)
     check('pdf.decrypt', locked or [None], lambda p: not PdfReader(p[0]).is_encrypted and pdf_pages(p[0]) == 2, pw)
     check('pdf.text', [pdf], lambda p: 'Page 2' in p[0].read_text(encoding='utf-8'))
-    check('pdf.number', [pdf], lambda p: [page.extract_text() for page in PdfReader(p[0]).pages] == ['3', '4'],
+    numbered = check('pdf.number', [pdf], lambda p: [page.extract_text() for page in PdfReader(p[0]).pages] == ['3', '4'],
           {'start': 3})
     check('pdf.watermark', [pdf], lambda p: [len(page.images) for page in PdfReader(p[0]).pages] == [1, 0],
           {'text': 'DRAFT', 'pages': '1'})
@@ -249,6 +262,51 @@ def run_suite(root):
     check('privacy.image_info', [image], lambda p: 'Author' in read_json(p[0])[0]['metadata_keys'])
     check('privacy.image_redact', [image], lambda p: Image.open(p[0]).getpixel((2, 2)) == (0, 0, 0, 255)
           and Image.open(p[0]).getpixel((200, 200)) == (255, 0, 0, 255))
+
+    check('image.id_photo', [image], lambda p: image_info(p[0]) == ('JPEG', (295, 413)) and pdf_pages(p[1]) == 1)
+    check('image.region_ocr', [ocr], lambda p: 'HELLO 123' in p[0].read_text(encoding='utf-8'), {'language': 'eng'})
+    check('pdf.clean_scan', [ocr], lambda p: pdf_pages(p[0]) == 1 and 'HELLO' in PdfReader(p[0]).pages[0].extract_text(),
+          {'language': 'eng'})
+    check('pdf.compare', [pdf, scan_pdf], lambda p: 'id="d1"' in p[0].read_text(encoding='utf-8'))
+    check('pdf.table_xlsx', numbered or [None], lambda p: workbook_rows(p[0]) == [('4',)],
+          {'page': 2})
+    check('pdf.redact', [pdf], lambda p: pdf_pages(p[0]) == 2 and not any(page.extract_text() for page in PdfReader(p[0]).pages),
+          {'regions': '[{"page":1,"region":[0,0,0.5,0.5]}]'})
+    check('video.target_size', [video], lambda p: media_test(p[0], '0:v:0') and p[0].stat().st_size <= 104858,
+          {'target_mib': '.1'})
+    check('video.timeline', [video, video], lambda p: media_test(p[0], '0:v:0') and media_test(p[0], '0:a:0'),
+          {'size': '640x360', 'clips': '[{"source":1,"start":0.2,"end":0.7},{"source":0,"start":0,"end":0.3}]'})
+    check('video.contact_sheet', [video], lambda p: image_info(p[0]) == ('PNG', (544, 368)),
+          {'frames': 4, 'columns': 2})
+    check('audio.silence', [silence_sample], lambda p: .8 < wav_duration(p[0]) < 1.2 and len(read_json(p[1])['spans']) == 1,
+          {'mode': '删除选中'})
+    check('file.archive', archive or [None], lambda p: next(p[0].iterdir()).read_bytes() == plain.read_bytes())
+    batch_dir = samples/'批处理'
+    nested = batch_dir/'子目录'
+    nested.mkdir(parents=True)
+    (nested/'甲.png').write_bytes(image.read_bytes())
+    check('folder.batch', [batch_dir], lambda p: len(list((p[0]/'子目录').rglob('*.jpg'))) == 1
+          and read_json(p[1])['completed'] == 1, {'suffixes': 'png'})
+    voice = os.environ.get('FORMABOX_TEST_AUDIO')
+    model = os.environ.get('FORMABOX_TEST_MODEL')
+    if voice and model and availability['whisper-cli']:
+        import shutil
+        cache = root/'speech-model'
+        cache.mkdir()
+        shutil.copyfile(model, cache/'ggml-tiny.bin')
+        previous = os.environ.get('FORMABOX_MODEL_DIR')
+        os.environ['FORMABOX_MODEL_DIR'] = str(cache)
+        try:
+            check('audio.transcribe', [Path(voice)],
+                  lambda p: 'country' in p[0].read_text(encoding='utf-8').lower() and '-->' in p[1].read_text(encoding='utf-8'),
+                  {'language': 'en'})
+        finally:
+            if previous is None:
+                os.environ.pop('FORMABOX_MODEL_DIR')
+            else:
+                os.environ['FORMABOX_MODEL_DIR'] = previous
+    else:
+        entries['audio.transcribe'] = {'status': 'blocked', 'details': '需要语音运行时及验收音频和模型'}
 
     assert set(entries) == TOOLS.keys(), f'未覆盖的工具: {TOOLS.keys() - entries.keys()}'
     assert plain.read_text(encoding='utf-8') == '中文\n中文\n\nabc\n' and image_info(image) == ('PNG', (320, 240))

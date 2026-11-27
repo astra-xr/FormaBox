@@ -106,6 +106,7 @@ BUNDLED_EXECUTABLES = {
     'ffmpeg': 'ffmpeg/ffmpeg.exe',
     'tesseract': 'tesseract/tesseract.exe',
     'soffice': 'libreoffice/program/soffice.com',
+    'whisper-cli': 'whisper/whisper-cli.exe',
 }
 
 
@@ -118,7 +119,8 @@ def bundled_engine(name):
 
 
 def find_executable(name):
-    variable = {'ffmpeg': 'FORMABOX_FFMPEG', 'tesseract': 'FORMABOX_TESSERACT'}.get(name)
+    variable = {'ffmpeg': 'FORMABOX_FFMPEG', 'tesseract': 'FORMABOX_TESSERACT',
+                'whisper-cli': 'FORMABOX_WHISPER'}.get(name)
     configured = os.environ.get(variable) if variable else None
     if configured:
         candidate = Path(configured)
@@ -261,6 +263,7 @@ def invoke(id,inputs,params,ctx):
 
 def execute(req,progress=emit):
     from . import imageops,pdfops,mediaops,fileops,textops,privacyops # register
+    from . import studio_files, studio_images, studio_media, studio_pdf, studio_speech
     if not isinstance(req, dict) or not isinstance(req.get('inputs'), list) or not req['inputs']:
         raise ValueError('请选择输入文件或目录')
     if ('steps' in req) == ('tool' in req):
@@ -278,6 +281,8 @@ def execute(req,progress=emit):
     job=uuid.uuid4().hex[:12]; final=output/f'FormaBox-{job}'
     if any(p.is_dir() and display_path(output).is_relative_to(display_path(p)) for p in inputs): raise ValueError('输出目录不能位于输入文件夹内部')
     output.mkdir(parents=True,exist_ok=True)
+    if req.get('tool') == 'folder.batch':
+        return studio_files.run_folder_batch(Context(output, cancel, progress), inputs, req.get('params', {}))
     staging=Path(tempfile.mkdtemp(prefix='.formabox-',dir=output))
     try:
         if steps is not None:

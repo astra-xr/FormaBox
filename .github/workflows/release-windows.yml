@@ -65,6 +65,8 @@ jobs:
       - name: Install, start, test and uninstall
         run: |
           $setup = Get-ChildItem build/installers -Filter '*-Full-Setup.exe' -File
+          $env:FORMABOX_TEST_AUDIO = (Resolve-Path 'build/engine-sources/speech-test.wav').Path
+          $env:FORMABOX_TEST_MODEL = (Resolve-Path 'build/engine-sources/Whisper-Multilingual-Tiny.bin').Path
           ./scripts/test-windows-installer.ps1 -Setup $setup.FullName -ExpectBundledEngines
       - name: Retain installer when validation fails
         if: failure()
@@ -90,7 +92,8 @@ jobs:
           $sources = @(
             'FFmpeg-Windows-Build-Sources.tar.gz',
             'FFmpeg-Windows-Dependency-Sources.tar',
-            'Tesseract-Windows-Build-Sources.tar.gz'
+            'Tesseract-Windows-Build-Sources.tar.gz',
+            'Whisper-Multilingual-Tiny.bin'
           ) | ForEach-Object { (Resolve-Path -LiteralPath (Join-Path 'build/engine-sources' $_)).Path }
           gh release create $tag $setup.FullName "$($setup.FullName).sha256" @sources --target $env:GITHUB_SHA --title "万象 $version · Windows 完整预览版" --notes-file packaging/windows/release-notes.md --prerelease --draft
           if ($LASTEXITCODE) { exit $LASTEXITCODE }

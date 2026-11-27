@@ -19,6 +19,7 @@ class Controller final : public QObject {
  Q_PROPERTY(bool systemDark READ systemDark NOTIFY systemThemeChanged)
  Q_PROPERTY(bool inspecting READ inspecting NOTIFY inspectionChanged)
  Q_PROPERTY(QVariantList presets READ presets NOTIFY presetsChanged)
+ Q_PROPERTY(QStringList favorites READ favorites NOTIFY favoritesChanged)
  Q_PROPERTY(bool hasBundledEngines READ hasBundledEngines CONSTANT)
 public:
  explicit Controller(QObject *parent=nullptr);
@@ -30,6 +31,13 @@ public:
  bool systemDark() const;
  bool inspecting() const { return !inspectionCommand.isEmpty(); }
  QVariantList presets() const { return m_presets; }
+ QStringList favorites() const { return m_favorites; }
+ Q_INVOKABLE bool setFavorites(const QStringList &ids);
+ Q_INVOKABLE void previewStudio(const QString &tool, const QVariantList &inputs, const QVariantMap &params,
+                                const QVariantMap &options);
+ Q_INVOKABLE void clearStudioPreview();
+ Q_INVOKABLE void playStudioSample(const QUrl &url);
+ Q_INVOKABLE void copyText(const QString &text);
  bool hasBundledEngines() const { return !bundledEnginePaths.isEmpty(); }
  Q_INVOKABLE QString savePreset(QString name, const QString &tool, const QVariantMap &params,
                                 const QVariantList &inputs);
@@ -61,6 +69,8 @@ signals:
  void toolsChanged(); void jobsChanged(); void statusChanged(); void systemThemeChanged();
  void inspectionChanged();
  void presetsChanged();
+ void favoritesChanged();
+ void studioPreviewReady(QVariantMap preview, QString error);
  void enginesChecked(QVariantMap results, QString message);
  void pdfPreviewReady(QVariantList pages, QString error);
  void pdfCompressionReady(QVariantMap preview, QString error);
@@ -69,6 +79,7 @@ private:
  struct Request {int index; QJsonObject json;};
  QVariantList m_tools,m_jobs; QString m_status; QProcess catalogue,worker; QByteArray buffer; QQueue<Request> pending; int active=-1;
  QVariantList m_presets;
+ QStringList m_favorites;
  const QVariantMap bundledEnginePaths;
  QString storePreset(QString name, QVariantMap preset, const QVariantList &inputs);
  QString presetParameters(const QString &tool, const QVariantMap &params, QVariantMap &values) const;
@@ -86,6 +97,8 @@ private:
  bool reloadPending = false;
  bool inspectionTimedOut = false;
  std::unique_ptr<QTemporaryDir> previewRoot;
+ std::unique_ptr<QTemporaryDir> studioRoot;
+ std::unique_ptr<QTemporaryDir> studioBatch;
  std::unique_ptr<QTemporaryDir> previewBatch;
  std::unique_ptr<QTemporaryDir> compressionPreview;
  QVariantMap compressionDetails;

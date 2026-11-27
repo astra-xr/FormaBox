@@ -398,6 +398,53 @@ static bool verifyButtonReflection(QObject *root)
     return button->property("lit").toBool() && right.x() - left.x() > button->width() / 2;
 }
 
+static bool verifyStudio(QQmlApplicationEngine &engine, QObject *root, Controller &controller)
+{
+    auto *popup = root->findChild<QObject *>("studioPreview");
+    QTemporaryDir sample;
+    if (!popup || !sample.isValid())
+        return false;
+    const auto source = sample.filePath(QStringLiteral("报名照片.png"));
+    QImage image(400, 360, QImage::Format_RGB32);
+    image.fill(Qt::darkCyan);
+    if (!image.save(source))
+        return false;
+    QVariantMap spec;
+    for (const auto &entry : controller.tools())
+        if (entry.toMap().value("id").toString() == "image.id_photo")
+            spec = entry.toMap();
+    auto window = engine.newQObject(root);
+    if (spec.isEmpty() || !controller.setFavorites({"image.id_photo", "folder.batch"}) ||
+        window.property("visibleTools").property("length").toInt() != 2 ||
+        !controller.setFavorites({}))
+        return false;
+
+    auto dialog = engine.newQObject(popup);
+    const auto wait = [&](const std::function<bool()> &start, const QString &field) {
+        QEventLoop loop;
+        QVariantMap result;
+        QString error;
+        QObject::connect(&controller, &Controller::studioPreviewReady, &loop,
+                         [&](const QVariantMap &reply, const QString &reason) {
+            result = reply;
+            error = reason;
+            loop.quit();
+        });
+        QTimer::singleShot(6500, &loop, &QEventLoop::quit);
+        if (!start()) return false;
+        loop.exec();
+        if (!error.isEmpty()) qWarning().noquote() << error;
+        return error.isEmpty() && result.contains(field);
+    };
+    const bool loaded = wait([&] {
+        return invokeQml(dialog, "show", {engine.toScriptValue(spec), engine.toScriptValue(QVariantList{source}),
+                                         engine.toScriptValue(QVariantMap{}), QJSValue(sample.path())});
+    }, "image");
+    const bool evaluated = loaded && wait([&] { return invokeQml(dialog, "request", {QJSValue("evaluate")}); },
+                                          "photoSize");
+    return invokeQml(dialog, "close") && evaluated;
+}
+
 static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controller &controller)
 {
     const auto tools = controller.tools();
@@ -431,6 +478,10 @@ static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controll
     }
     if (!verifyButtonReflection(root)) {
         qWarning("The button reflection did not follow the pointer.");
+        return false;
+    }
+    if (!verifyStudio(engine, root, controller)) {
+        qWarning("Studio preview or favorites verification failed.");
         return false;
     }
     const auto call = [&](const char *method, const QJSValueList &arguments = {}) {
@@ -469,9 +520,12 @@ int main(int argc, char **argv)
 
     auto arguments = app.arguments();
     const bool verifyImport = arguments.removeAll("--verify-send-to") > 0;
+    const bool verifyQuick = arguments.removeAll("--verify-quick") > 0;
     const auto sendTo = arguments.indexOf("--send-to");
     const auto options = sendTo < 0 ? arguments : arguments.first(sendTo);
-    const bool verify = verifyImport || options.contains("--verify-runtime");
+    const bool verify = verifyQuick || verifyImport || options.contains("--verify-runtime");
+    const QString quickTool = options.contains("--quick-office") ? "doc.pdf" :
+                              options.contains("--quick-photo") ? "image.compress" : "";
     QVariantList launchedFiles;
     if (sendTo >= 0) {
         for (const auto &path : arguments.sliced(sendTo + 1)) {
@@ -507,6 +561,50 @@ int main(int argc, char **argv)
         window->setProperty("immersiveFrame", installWindowFrame(*window));
 #endif
         window->show();
+    }
+
+    if (!quickTool.isEmpty() || verifyQuick) {
+        bool submitted = false;
+        const auto submit = [&] {
+            if (submitted || controller.tools().isEmpty() || engine.rootObjects().isEmpty()) return;
+            submitted = true;
+            const QStringList formats = quickTool == "doc.pdf"
+                ? QStringList{"doc", "docx", "odt", "rtf", "xls", "xlsx", "ppt", "pptx"}
+                : QStringList{"png", "jpg", "jpeg", "webp", "bmp", "tif", "tiff", "avif"};
+            const auto suffixes = controller.inputSuffixes(launchedFiles);
+            if (quickTool.isEmpty() || suffixes.isEmpty() ||
+                std::any_of(suffixes.cbegin(), suffixes.cend(), [&](const QString &suffix) { return !formats.contains(suffix); })) {
+                if (verifyQuick) app.exit(3);
+                else engine.rootObjects().constFirst()->setProperty("workflowNotice", QStringLiteral("所选文件与右键快捷操作不匹配"));
+                return;
+            }
+            const auto destination = verifyQuick ? verificationSettings->filePath("quick-output") : controller.outputDefault();
+            const QVariantMap params = quickTool == "image.compress"
+                ? QVariantMap{{"format", "jpg"}, {"target_kib", "100"}} : QVariantMap{};
+            controller.submit(quickTool, launchedFiles, params, destination);
+        };
+        QObject::connect(&controller, &Controller::toolsChanged, &app, [&app, submit] {
+            QTimer::singleShot(0, &app, submit);
+        });
+        if (verifyQuick) {
+            QObject::connect(&controller, &Controller::jobsChanged, &app, [&] {
+                if (controller.busy() || controller.jobs().isEmpty()) return;
+                const auto job = controller.jobs().constLast().toMap();
+                const auto outputs = job.value("outputs").toList();
+                if (job.value("state").toString() != QStringLiteral("完成") || outputs.size() != launchedFiles.size()) {
+                    app.exit(4);
+                    return;
+                }
+                const bool passed = std::all_of(outputs.cbegin(), outputs.cend(), [&](const QVariant &value) {
+                    const QFileInfo file(value.toMap().value("path").toString());
+                    return file.isFile() && (quickTool == "doc.pdf" ? file.suffix() == "pdf" :
+                                              file.suffix() == "jpg" && file.size() <= 100*1024);
+                });
+                app.exit(passed ? 0 : 5);
+            });
+            QTimer::singleShot(45'000, &app, [&] { app.exit(2); });
+        }
+        return app.exec();
     }
 
     bool verificationStarted = false;

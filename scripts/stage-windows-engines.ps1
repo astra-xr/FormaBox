@@ -142,6 +142,26 @@ $lo = Join-Path $engineRoot 'libreoffice'
 & robocopy.exe $officeRoot $lo /E /XJ /R:0 /W:0 /NFL /NDL /NJH /NJS /NP /XF '*.msi'
 if ($LASTEXITCODE -ge 8) { throw 'LibreOffice staging failed' }
 
+Write-Host 'Staging whisper.cpp and validating the optional speech model'
+$whisperZip = Join-Path $work 'whisper-bin-x64.zip'
+Save-Verified 'https://github.com/ggml-org/whisper.cpp/releases/download/v1.8.3/whisper-bin-x64.zip' $whisperZip 'd824b1e37599f882b396e73f1ee0bfd5d0529f700314c48311dcbd00b803321d'
+$whisperExtract = Join-Path $work 'whisper-extract'
+Expand-Archive -LiteralPath $whisperZip -DestinationPath $whisperExtract
+$cli = @(Get-ChildItem -LiteralPath $whisperExtract -Filter 'whisper-cli.exe' -File -Recurse)
+if ($cli.Count -ne 1) { throw 'Whisper CLI missing' }
+$whisper = (New-Item -ItemType Directory -Path (Join-Path $engineRoot 'whisper')).FullName
+Copy-Item -LiteralPath $cli[0].FullName -Destination $whisper
+Get-ChildItem -LiteralPath $cli[0].DirectoryName -File -Filter '*.dll' |
+    Where-Object { $_.Name -ne 'SDL2.dll' } | Copy-Item -Destination $whisper
+Save-GitBlob 'https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.8.3/LICENSE' (Join-Path $whisper 'LICENSE.txt') 'acb96ce78e0486e9dc7602cdcdd2f491c34f335a'
+$model = Join-Path $sourceRoot 'Whisper-Multilingual-Tiny.bin'
+try {
+    Save-Verified 'https://huggingface.co/ggerganov/whisper.cpp/resolve/fb5ed9369c26eaf08392504d8446da431e0fffb9/ggml-tiny.bin?download=true' $model 'be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21'
+} catch {
+    Save-Verified 'https://hf-mirror.com/ggerganov/whisper.cpp/resolve/fb5ed9369c26eaf08392504d8446da431e0fffb9/ggml-tiny.bin?download=true' $model 'be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21'
+}
+Save-Verified 'https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.8.3/samples/jfk.wav' (Join-Path $sourceRoot 'speech-test.wav') '59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e'
+
 @'
 FormaBox Windows bundled engines
 
@@ -160,6 +180,12 @@ See libreoffice/LICENSE.html and the upstream notices in the LibreOffice directo
 Corresponding source archives for the core, dictionaries, help and translations:
 https://download.documentfoundation.org/libreoffice/src/26.8.3/
 https://mirrors.ibiblio.org/libreoffice/src/26.8.3/
+
+whisper.cpp v1.8.3 CPU CLI is distributed under MIT. See whisper/LICENSE.txt.
+Source: https://github.com/ggml-org/whisper.cpp/tree/v1.8.3
+The optional multilingual tiny model is hosted on the same release under MIT.
+Model source: https://huggingface.co/ggerganov/whisper.cpp
+Model upstream license: https://github.com/openai/whisper/blob/main/LICENSE
 
 FormaBox releases and source attachments: https://github.com/astra-xr/FormaBox/releases
 '@ | Set-Content -LiteralPath (Join-Path $engineRoot 'NOTICES.txt') -Encoding utf8

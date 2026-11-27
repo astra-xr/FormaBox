@@ -5,7 +5,11 @@ from shutil import copy2, copytree, ignore_patterns
 import sys
 
 
-RUNTIME_PACKAGES = ("Pillow", "pypdf", "pypdfium2", "cryptography", "cffi", "pycparser")
+RUNTIME_PACKAGES = (
+    "Pillow", "pypdf", "pypdfium2", "cryptography", "cffi", "pycparser",
+    "openpyxl", "et-xmlfile", "py7zr", "texttable", "pycryptodomex", "brotli",
+    "psutil", "backports.zstd", "pyppmd", "pybcj", "multivolumefile", "inflate64",
+)
 
 
 def stage_runtime(destination: Path) -> None:

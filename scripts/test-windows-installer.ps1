@@ -19,11 +19,14 @@ $uninstaller = Join-Path $target 'Uninstall.exe'
 $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) '万象.lnk'
 $desktopShortcut = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) '万象.lnk'
 $sendToShortcut = Join-Path ([Environment]::GetFolderPath('SendTo')) '万象（FormaBox）.lnk'
+$quickOffice = Join-Path ([Environment]::GetFolderPath('SendTo')) '万象 - Office 转 PDF.lnk'
+$quickPhoto = Join-Path ([Environment]::GetFolderPath('SendTo')) '万象 - 图片压缩到 100 KiB.lnk'
 
 try {
     Invoke-CheckedProcess $setupPath "/S /D=$target"
     if (!(Test-Path -LiteralPath $uninstaller) -or !(Test-Path -LiteralPath $shortcut) -or
         !(Test-Path -LiteralPath $desktopShortcut) -or !(Test-Path -LiteralPath $sendToShortcut) -or
+        !(Test-Path -LiteralPath $quickOffice) -or !(Test-Path -LiteralPath $quickPhoto) -or
         (Get-ItemProperty -LiteralPath $registry).InstallLocation -ne $target) {
         throw 'Installation files, shortcuts, or uninstall registration are missing'
     }
@@ -31,7 +34,7 @@ try {
     $previousPath = $env:Path
     $env:Path = "$env:SystemRoot\System32;$env:SystemRoot"
     Remove-Item Env:PYTHONHOME,Env:PYTHONPATH,Env:FORMABOX_PYTHON,Env:FORMABOX_WORKER_DIR,Env:QT_PLUGIN_PATH,Env:QML2_IMPORT_PATH,Env:QML_IMPORT_PATH -ErrorAction SilentlyContinue
-    Remove-Item Env:FORMABOX_FFMPEG,Env:FORMABOX_TESSERACT,Env:FORMABOX_SOFFICE,Env:TESSDATA_PREFIX -ErrorAction SilentlyContinue
+    Remove-Item Env:FORMABOX_FFMPEG,Env:FORMABOX_TESSERACT,Env:FORMABOX_SOFFICE,Env:FORMABOX_WHISPER,Env:TESSDATA_PREFIX -ErrorAction SilentlyContinue
     $env:QT_QPA_PLATFORM = 'windows'
     $env:QT_QUICK_BACKEND = 'software'
     $env:QT_FORCE_STDERR_LOGGING = '1'
@@ -79,6 +82,16 @@ try {
         throw "Send To shortcut failed runtime verification with code $($sendProcess.ExitCode)"
     }
     Write-Host 'Send To and desktop runtime verified.'
+    $quickInputs = @('快捷测试 甲.png', '快捷测试 乙.png') | ForEach-Object { Join-Path $testRoot $_ }
+    & $python -c 'import sys; from PIL import Image; [Image.new("RGB", (160, 100), "teal").save(p) for p in sys.argv[1:]]' @quickInputs
+    if ($LASTEXITCODE) { throw 'Unable to generate quick-action inputs' }
+    Invoke-CheckedProcess $quickPhoto ('--verify-quick "{0}" "{1}"' -f $quickInputs[0], $quickInputs[1])
+    if ($ExpectBundledEngines) {
+        $document = Join-Path $testRoot '快捷测试 文档.rtf'
+        Set-Content -LiteralPath $document -Encoding ascii -Value '{\rtf1\ansi FormaBox quick Office test}'
+        Invoke-CheckedProcess $quickOffice ('--verify-quick "{0}"' -f $document)
+    }
+    Write-Host 'Quick actions completed from their installed shortcuts.'
     $smokeScript = Join-Path $PSScriptRoot '../tests/smoke_tools.py'
     $reportPath = Join-Path $testRoot 'smoke.json'
     $arguments = '-X utf8 -B "{0}" --scratch "{1}" --report "{2}"' -f $smokeScript, $testRoot, $reportPath
@@ -100,6 +113,7 @@ try {
     if ((Test-Path -LiteralPath (Join-Path $target 'FormaBox.exe')) -or
         (Test-Path -LiteralPath $registry) -or (Test-Path -LiteralPath $shortcut) -or
         (Test-Path -LiteralPath $desktopShortcut) -or (Test-Path -LiteralPath $sendToShortcut) -or
+        (Test-Path -LiteralPath $quickOffice) -or (Test-Path -LiteralPath $quickPhoto) -or
         !(Test-Path -LiteralPath $userFile)) {
         throw 'Uninstall did not remove registered app files or did not preserve the user file'
     }

@@ -16,7 +16,15 @@ python/LICENSE.txt. Wheel notices are in python/Lib/site-packages in each
 distribution's .dist-info directory and accompanying license files. The
 wheel versions are listed in runtime-requirements.txt.
 
-Microsoft Visual C++ v143 runtime — Redistributable components from the
+The 7z and spreadsheet packages include their corresponding license notices
+and Python sources in the wheel directories. Original package distributions
+and corresponding source releases are listed on PyPI:
+https://pypi.org/project/py7zr/1.1.4/#files
+https://pypi.org/project/openpyxl/3.1.5/#files
+The transitive package versions and license notices are in the same directories.
+whisper.cpp and the optional speech model have separate notices in engines/NOTICES.txt.
+
+Microsoft Visual C++ v143 CRT and OpenMP runtime — Redistributable components from the
 Microsoft Visual Studio toolchain.
 https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files
 
