@@ -6,7 +6,8 @@ import QtQuick.Dialogs
 ApplicationWindow {
     id: root
     width: 1200; height: 800; minimumWidth: 860; minimumHeight: 600
-    visible: true; title: "万象"
+    title: "万象"
+    property bool immersiveFrame: windowsFrameSupported
     property string themeMode: "system"
     readonly property bool dark: themeMode === "system" ? backend.systemDark : themeMode === "dark"
     readonly property color panel: dark ? "#23303d" : "#fcfdff"
@@ -95,6 +96,12 @@ ApplicationWindow {
         gradient: Gradient {
             GradientStop { position: 0; color: root.dark ? "#202e3b" : "#f3f7fb" }
             GradientStop { position: 1; color: root.canvas }
+        }
+        Rectangle {
+            anchors.fill: parent
+            visible: root.immersiveFrame && root.visibility === Window.Windowed
+            color: "transparent"
+            border.color: root.rim
         }
     }
 
@@ -456,18 +463,52 @@ ApplicationWindow {
 
     onClosing: function(close){if(backend.busy || backend.inspecting){close.accepted=false;root.workflowNotice="请先取消或等待当前任务结束再关闭"}}
     header: Item {
-        height: 70
-        Panel { anchors.fill: parent; anchors.margins: 14; anchors.bottomMargin: 0 }
-        RowLayout { anchors.fill: parent; anchors.leftMargin: 28; anchors.rightMargin: 28; anchors.topMargin: 14; spacing: 10
-            Image {
-                Layout.preferredWidth: 38; Layout.preferredHeight: 38
-                source: "qrc:/branding/formabox.png"
-                fillMode: Image.PreserveAspectFit
-                mipmap: true
+        height: root.immersiveFrame ? 58 : 70
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: root.visibility === Window.Windowed ? 1 : 0
+            anchors.bottomMargin: 0
+            visible: root.immersiveFrame
+            color: root.panel
+            Rectangle {
+                anchors { bottom: parent.bottom; left: parent.left; right: parent.right }
+                height: 1
+                color: root.rim
             }
-            Label { text: "万象"; font.pixelSize: 22; font.bold: true; color: root.ink }
-            Label { text: Qt.application.version; color: root.muted; font.pixelSize: 12 }
-            Item { Layout.fillWidth: true }
+        }
+        Panel {
+            anchors.fill: parent; anchors.margins: 14; anchors.bottomMargin: 0
+            visible: !root.immersiveFrame
+        }
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: root.immersiveFrame ? 16 : 28
+            anchors.rightMargin: root.immersiveFrame ? 12 : 28
+            anchors.topMargin: root.immersiveFrame ? 0 : 14
+            spacing: 9
+            Item {
+                objectName: "windowDragArea"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.minimumWidth: brand.implicitWidth
+                enabled: !pdfWorkbench.visible && !presetManager.visible && !renamePreview.visible &&
+                         !taskResults.visible && !(engineSettings.item && engineSettings.item.visible)
+                RowLayout {
+                    id: brand
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 8
+                    Image {
+                        Layout.preferredWidth: root.immersiveFrame ? 32 : 38
+                        Layout.preferredHeight: width
+                        source: "qrc:/branding/formabox.png"
+                        fillMode: Image.PreserveAspectFit
+                        mipmap: true
+                    }
+                    Label { text: root.title; font.pixelSize: 20; font.bold: true; color: root.ink }
+                    Label { text: Qt.application.version; color: root.muted; font.pixelSize: 12 }
+                }
+            }
             ComboBox {
                 model: ["跟随系统", "浅色", "深色"]
                 currentIndex: ["system", "light", "dark"].indexOf(root.themeMode)
@@ -482,6 +523,53 @@ ApplicationWindow {
                 onClicked: root.showMissingEngines()
             }
             GlowButton { text: "常用预设"; onClicked: presetManager.open() }
+            RowLayout {
+                visible: root.immersiveFrame
+                spacing: 4
+                Rectangle {
+                    Layout.preferredWidth: 1
+                    Layout.preferredHeight: 23
+                    Layout.leftMargin: 2
+                    Layout.rightMargin: 3
+                    color: root.rim
+                }
+                GlowButton {
+                    objectName: "minimizeWindowButton"
+                    text: "−"
+                    compact: true
+                    Layout.preferredWidth: 36
+                    Accessible.name: "最小化窗口"
+                    ToolTip.text: Accessible.name
+                    ToolTip.visible: hovered
+                    onClicked: root.showMinimized()
+                }
+                GlowButton {
+                    objectName: "maximizeWindowButton"
+                    text: root.visibility === Window.Maximized ? "❐" : "□"
+                    compact: true
+                    Layout.preferredWidth: 36
+                    Accessible.name: root.visibility === Window.Maximized ? "还原窗口" : "最大化窗口"
+                    ToolTip.text: Accessible.name
+                    ToolTip.visible: hovered
+                    onClicked: {
+                        if (root.visibility === Window.Maximized)
+                            root.showNormal()
+                        else
+                            root.showMaximized()
+                    }
+                }
+                GlowButton {
+                    objectName: "closeWindowButton"
+                    text: "×"
+                    compact: true
+                    destructive: true
+                    Layout.preferredWidth: 36
+                    Accessible.name: "关闭窗口"
+                    ToolTip.text: Accessible.name
+                    ToolTip.visible: hovered
+                    onClicked: root.close()
+                }
+            }
         }
     }
     RowLayout {

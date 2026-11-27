@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(FormaBox VERSION 0.8.0 LANGUAGES CXX)
+project(FormaBox VERSION 0.8.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(WIN32)
@@ -27,6 +27,8 @@ qt_add_resources(FormaBox "branding"
     BASE "${branding_dir}"
     FILES "${branding_dir}/formabox.png")
 if(WIN32)
+    target_sources(FormaBox PRIVATE desktop/windowframe_win.cpp desktop/windowframe_win.h)
+    target_link_libraries(FormaBox PRIVATE dwmapi comctl32)
     set(icon_resource "${branding_dir}/formabox.rc")
     set_source_files_properties("${icon_resource}" PROPERTIES
         OBJECT_DEPENDS "${branding_dir}/formabox.ico")

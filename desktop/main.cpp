@@ -20,6 +20,9 @@
 #include <QTimer>
 #include <functional>
 #include "controller.h"
+#ifdef Q_OS_WIN
+#include "windowframe_win.h"
+#endif
 
 static bool invokeQml(QJSValue object, const char *method, const QJSValueList &arguments = {})
 {
@@ -416,6 +419,12 @@ static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controll
     }
 
     auto window = engine.newQObject(root);
+#ifdef Q_OS_WIN
+    if (!window.property("immersiveFrame").toBool() || !verifyWindowFrame(*qobject_cast<QQuickWindow *>(root))) {
+        qWarning("Immersive window frame verification failed.");
+        return false;
+    }
+#endif
     if (!verifyToolNavigation(window, root, tools)) {
         qWarning("Tool navigation, search, or button theme verification failed.");
         return false;
@@ -484,9 +493,21 @@ int main(int argc, char **argv)
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("backend", &controller);
     engine.rootContext()->setContextProperty("launchFiles", launchedFiles);
+#ifdef Q_OS_WIN
+    engine.rootContext()->setContextProperty("windowsFrameSupported", true);
+#else
+    engine.rootContext()->setContextProperty("windowsFrameSupported", false);
+#endif
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed,
                      &app, [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
     engine.loadFromModule("FormaBox", "Main");
+    if (!engine.rootObjects().isEmpty()) {
+        auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst());
+#ifdef Q_OS_WIN
+        window->setProperty("immersiveFrame", installWindowFrame(*window));
+#endif
+        window->show();
+    }
 
     bool verificationStarted = false;
     if (verify) {
@@ -508,8 +529,10 @@ int main(int argc, char **argv)
                 qWarning("Desktop regression checks failed.");
             app.exit(passed ? 0 : 3);
         };
-        QObject::connect(&controller, &Controller::toolsChanged, &app, exitWhenReady);
-        QTimer::singleShot(0, &app, exitWhenReady);
+        // Give the header and its native hit targets a layout pass before testing.
+        const auto scheduleVerification = [&app, exitWhenReady] { QTimer::singleShot(100, &app, exitWhenReady); };
+        QObject::connect(&controller, &Controller::toolsChanged, &app, scheduleVerification);
+        scheduleVerification();
         QTimer::singleShot(45'000, &app, [&] { app.exit(2); });
     }
     return app.exec();

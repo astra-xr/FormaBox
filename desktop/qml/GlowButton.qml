@@ -6,6 +6,7 @@ Button {
     id: control
     property bool selected: false
     property bool primary: false
+    property bool destructive: false
     property bool centered: true
     property bool compact: false
     property string caption: ""
@@ -42,7 +43,8 @@ Button {
                 width: parent.width
                 text: control.text
                 textFormat: Text.PlainText
-                color: control.filled ? "#f3fffc" : control.palette.buttonText
+                color: control.filled || (control.destructive && (control.hovered || control.down))
+                       ? "#ffffff" : control.palette.buttonText
                 font: control.font
                 horizontalAlignment: control.centered ? Text.AlignHCenter : Text.AlignLeft
                 wrapMode: control.caption ? Text.Wrap : Text.NoWrap
@@ -66,8 +68,10 @@ Button {
     background: Rectangle {
         id: body
         radius: 9
+        readonly property bool danger: control.destructive && (control.hovered || control.down)
         border.width: control.visualFocus ? 2 : 1
         border.color: control.visualFocus ? control.palette.highlight
+                      : danger ? "#a64148"
                       : control.filled ? "#548a81"
                       : control.selected ? (control.dark ? "#6da99f" : "#6aa197")
                       : control.lit ? (control.dark ? "#657f95" : "#98abbe")
@@ -75,13 +79,15 @@ Button {
         gradient: Gradient {
             GradientStop {
                 position: 0
-                color: control.filled ? (control.down ? "#255850" : "#316e63")
+                color: body.danger ? (control.down ? "#892d36" : "#ac4650")
+                       : control.filled ? (control.down ? "#255850" : "#316e63")
                        : control.selected ? (control.dark ? "#2d5755" : "#e6f4f0")
                        : control.dark ? "#344658" : "#ffffff"
             }
             GradientStop {
                 position: 1
-                color: control.filled ? (control.down ? "#1b4741" : "#255850")
+                color: body.danger ? "#842c35"
+                       : control.filled ? (control.down ? "#1b4741" : "#255850")
                        : control.selected ? (control.dark ? "#264a49" : "#dceee9")
                        : control.down ? (control.dark ? "#22303d" : "#e4ebf3")
                        : control.dark ? "#2a3a4a" : "#f0f4f9"
@@ -108,8 +114,8 @@ Button {
                     focalX: centerX
                     focalY: centerY
                     centerRadius: Math.max(32, Math.min(100, reflection.width * 0.74))
-                    GradientStop { position: 0; color: control.dark || control.filled ? "#8fb6fff0" : "#6746b7a9" }
-                    GradientStop { position: 0.38; color: control.dark || control.filled ? "#46a9daca" : "#3246b7a9" }
+                    GradientStop { position: 0; color: body.danger ? "#36ffc4c7" : control.dark || control.filled ? "#8fb6fff0" : "#6746b7a9" }
+                    GradientStop { position: 0.38; color: body.danger ? "#16ffc4c7" : control.dark || control.filled ? "#46a9daca" : "#3246b7a9" }
                     GradientStop { position: 1; color: "transparent" }
                 }
                 PathLine { x: reflection.width - reflection.corner; y: 0 }
