@@ -20,6 +20,20 @@ namespace {
 constexpr const char *engineNames[] = {"LibreOffice", "ffmpeg", "tesseract"};
 constexpr const char *engineVariables[] = {"FORMABOX_SOFFICE", "FORMABOX_FFMPEG", "FORMABOX_TESSERACT"};
 
+QVariantMap detectBundledEngines() {
+ const QDir application(QCoreApplication::applicationDirPath());
+ const char *files[] = {"engines/libreoffice/program/soffice.com", "engines/ffmpeg/ffmpeg.exe",
+                        "engines/tesseract/tesseract.exe"};
+ QVariantMap paths;
+ for (int i = 0; i < 3; ++i) {
+  const QFileInfo engine(application.filePath(QString::fromLatin1(files[i])));
+  if (!engine.isFile())
+   return {};
+  paths.insert(engineNames[i], engine.absoluteFilePath());
+ }
+ return paths;
+}
+
 bool isTaskOutput(const QFileInfo &directory, const QFileInfo &file) {
  if (!directory.isDir() || !directory.isAbsolute() || !file.isAbsolute() || file.isSymLink() ||
      !(file.isFile() || file.isDir()))
@@ -51,7 +65,7 @@ QVariantMap resultRow(const QFileInfo &file, const QVariantMap &details = {}) {
 }
 }
 
-Controller::Controller(QObject *parent):QObject(parent){
+Controller::Controller(QObject *parent):QObject(parent), bundledEnginePaths(detectBundledEngines()){
  loadHistory();
  m_presets = QSettings().value("tools/presets").toList();
  connect(QGuiApplication::styleHints(),&QStyleHints::colorSchemeChanged,this,&Controller::systemThemeChanged);
@@ -111,18 +125,13 @@ void Controller::configure(QProcess &p, const QVariantMap *overrides){
  QString root=qEnvironmentVariable("FORMABOX_WORKER_DIR");if(root.isEmpty())root=QDir(QCoreApplication::applicationDirPath()).filePath("worker");
  if(QFileInfo::exists(QDir(root).filePath("formabox"))){QString old=env.value("PYTHONPATH");env.insert("PYTHONPATH",root+(old.isEmpty()?QString():QString(QDir::listSeparator())+old));}
  QString engines=QDir(QCoreApplication::applicationDirPath()).filePath("engines");env.insert("PATH",engines+QString(QDir::listSeparator())+env.value("PATH"));
- const auto paths = overrides ? *overrides : enginePaths();
+ const auto paths = hasBundledEngines() ? bundledEnginePaths : (overrides ? *overrides : enginePaths());
+ if (hasBundledEngines())
+  env.remove("TESSDATA_PREFIX");
  for (int i = 0; i < 3; ++i) {
   const auto path = paths.value(engineNames[i]).toString();
   if (!path.isEmpty())
    env.insert(engineVariables[i], path);
- }
- if (!env.contains("TESSDATA_PREFIX")) {
-  const auto customOcr = env.value("FORMABOX_TESSERACT");
-  const QDir ocrFolder = customOcr.isEmpty() ? QDir(engines) : QFileInfo(customOcr).dir();
-  const auto tessdata = ocrFolder.filePath("tessdata");
-  if (QFileInfo(tessdata).isDir())
-   env.insert("TESSDATA_PREFIX", tessdata);
  }
  p.setProcessEnvironment(env);p.setProgram(python);
 }

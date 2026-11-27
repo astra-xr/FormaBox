@@ -839,6 +839,40 @@
     ]
   },
   {
+    "id": "video.frames",
+    "category": "视频",
+    "label": "视频批量抽帧",
+    "params": [
+      {
+        "key": "interval",
+        "label": "抽帧间隔（秒）",
+        "default": "2",
+        "kind": "number",
+        "choices": []
+      },
+      {
+        "key": "limit",
+        "label": "每个视频最多导出几张",
+        "default": "12",
+        "kind": "number",
+        "choices": []
+      },
+      {
+        "key": "max_side",
+        "label": "最长边像素上限",
+        "default": "960",
+        "kind": "number",
+        "choices": []
+      }
+    ],
+    "minimum": 1,
+    "maximum": 8,
+    "description": "从首个画面开始按间隔提取实际视频帧，保持宽高比并按顺序导出 PNG。",
+    "engines": [
+      "ffmpeg"
+    ]
+  },
+  {
     "id": "subtitle.convert",
     "category": "视频",
     "label": "字幕格式转换",

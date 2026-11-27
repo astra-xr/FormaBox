@@ -289,7 +289,7 @@ ApplicationWindow {
         else if (suffixes.every(suffix => suffix === "pdf" || workbenchImages.includes(suffix)))
             ids = ["pdf.compose"]
         else if (suffixes.every(suffix => video.includes(suffix)))
-            ids = ["video.convert", "video.compress", "audio.convert"]
+            ids = ["video.convert", "video.compress", "video.frames", "audio.convert"]
         else if (suffixes.every(suffix => suffix === "srt" || suffix === "vtt"))
             ids = ["subtitle.convert", "subtitle.shift", "subtitle.transcript"]
         else if (suffixes.every(suffix => audio.includes(suffix)))
@@ -309,9 +309,16 @@ ApplicationWindow {
         pdfWorkbench.importPaths(inputs.filter((path, i) => suffixes[i] === "pdf" || workbenchImages.includes(suffixes[i])))
     }
 
+    function showMissingEngines() {
+        if (engineSettings.item)
+            engineSettings.item.open()
+        else
+            workflowNotice = "内置引擎不可用，请重新安装万象"
+    }
+
     function useSuggestion(tool) {
         if ((tool.missing_engines || []).length) {
-            engineSettings.open()
+            showMissingEngines()
             return
         }
         if (tool.id !== "pdf.compose") {
@@ -361,7 +368,7 @@ ApplicationWindow {
         }
         if (presetMissing(tools).length) {
             presetManager.close()
-            engineSettings.open()
+            showMissingEngines()
             return
         }
         if (preset.steps) {
@@ -464,7 +471,15 @@ ApplicationWindow {
         outputDirectory: output.text
         onOutputDirectorySelected: function(directory) { output.text = directory }
     }
-    EngineSettings { id: engineSettings; objectName: "engineSettings"; controller: backend }
+    Loader {
+        id: engineSettings
+        active: !backend.hasBundledEngines
+        sourceComponent: EngineSettings {
+            objectName: "engineSettings"
+            parent: root.contentItem
+            controller: backend
+        }
+    }
     RenamePreview { id: renamePreview; objectName: "renamePreview"; controller: backend }
     TaskResults {
         id: taskResults
@@ -499,7 +514,8 @@ ApplicationWindow {
                     width: ListView.view.width
                     Label { text: modelData.name + (modelData.steps ? " · " + modelData.steps.length + " 步" : ""); textFormat: Text.PlainText; Layout.fillWidth: true; elide: Text.ElideRight }
                     Button {
-                        text: root.presetMissing(tools).length ? "配置引擎" : "运行"
+                        text: !root.presetMissing(tools).length ? "运行" :
+                              backend.hasBundledEngines ? "引擎不可用" : "配置引擎"
                         enabled: root.presetFits(modelData, tools, root.inputs,
                                                 Array.from(backend.inputSuffixes(root.inputs))) && output.text.trim() !== ""
                         onClicked: root.runPreset(modelData)
@@ -567,7 +583,12 @@ ApplicationWindow {
                 Accessible.name: "界面主题"
             }
             GlassButton { text: "页面工作台"; onClicked: root.openWorkbench() }
-            GlassButton { text: "引擎设置"; onClicked: engineSettings.open() }
+            GlassButton {
+                objectName: "engineSettingsButton"
+                visible: !backend.hasBundledEngines
+                text: "引擎设置"
+                onClicked: root.showMissingEngines()
+            }
             GlassButton { text: "常用预设"; onClicked: presetManager.open() }
         }
     }
@@ -618,7 +639,8 @@ ApplicationWindow {
                     delegate: GlassButton {
                         required property var modelData
                         compact: true
-                        text: (modelData.missing_engines || []).length ? "配置 · " + modelData.label : modelData.label
+                        text: !backend.hasBundledEngines && (modelData.missing_engines || []).length ?
+                              "配置 · " + modelData.label : modelData.label
                         onClicked: root.useSuggestion(modelData)
                     }
                 }
@@ -718,7 +740,9 @@ ApplicationWindow {
                     Label { text: root.selected ? root.selected.description : "从工具列表选择一个工具"; color: root.muted; wrapMode: Text.Wrap; Layout.fillWidth: true; visible: text.length>0 }
                     Label {
                         visible: root.selected !== null && !root.selectedReady
-                        text: visible ? "需要安装 " + (root.selected.missing_engines || []).join("、") : ""
+                        text: !visible ? "" : backend.hasBundledEngines ?
+                              "内置引擎不可用，请重新安装万象" :
+                              "需要安装 " + (root.selected.missing_engines || []).join("、")
                         color: root.muted; wrapMode: Text.Wrap; Layout.fillWidth: true
                     }
                     RowLayout { Label { text: "输入文件 ("+root.inputs.length+")"; color: root.ink; font.bold: true } Item { Layout.fillWidth: true } GlassButton { text: "清空"; onClicked: root.inputs=[] } }

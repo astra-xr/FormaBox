@@ -53,6 +53,33 @@ def snapshot(ctx,inputs,p):
     return batch(ctx,inputs,'png',lambda f,d:ff(ctx,f,d,['-ss',str(t),'-frames:v','1','-threads','1']))
 
 
+@tool('video.frames', '视频', '视频批量抽帧',
+      [param('interval', '抽帧间隔（秒）', '2', 'number'),
+       param('limit', '每个视频最多导出几张', '12', 'number'),
+       param('max_side', '最长边像素上限', '960', 'number')],
+      maximum=8, engines=['ffmpeg'],
+      description='从首个画面开始按间隔提取实际视频帧，保持宽高比并按顺序导出 PNG。')
+def extract_frames(ctx, inputs, params):
+    interval = number(params, 'interval', 0.1, 600)
+    limit = integer(params, 'limit', 1, 60)
+    side = integer(params, 'max_side', 32, 2048)
+    filters = (f'select=isnan(prev_selected_t)+gte(t-prev_selected_t\\,{interval}),'
+               f'scale=min(iw\\,{side}):min(ih\\,{side}):force_original_aspect_ratio=decrease')
+    outputs = []
+    for index, source in enumerate(inputs, 1):
+        ctx.tick(index - 1, len(inputs), source.name)
+        prefix = f'{index:04d}-'
+        template = ctx.path(f'{prefix}{source.stem}-frame').name.replace('%', '%%') + '-%04d.png'
+        ctx.run([*ffmpeg_input(source), '-map', '0:v:0', '-vf', filters, '-fps_mode', 'vfr',
+                 '-frames:v', str(limit), '-threads', '1', '-start_number', '1', '-f', 'image2', template],
+                cwd=ctx.root)
+        frames = sorted(ctx.root.glob(f'{prefix}*.png'))
+        if not frames:
+            raise RuntimeError(f'{source.name} 没有可导出的视频画面')
+        outputs.extend(frames)
+    return outputs
+
+
 @tool('subtitle.convert', '视频', '字幕格式转换',
       [param('format', '输出格式', 'vtt', 'choice', ['srt', 'vtt'])], maximum=32,
       description='SRT 与 WebVTT 互转，保留时间、字幕正文及常见粗体、斜体、下划线。更换格式时布局和样式块会省略。')

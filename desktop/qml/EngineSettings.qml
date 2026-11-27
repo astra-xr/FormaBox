@@ -58,7 +58,7 @@ Dialog {
 
         Label {
             Layout.fillWidth: true
-            text: "留空时自动查找。选择程序后，可先试跑，也可通过测试后保存。"
+            text: "留空时自动查找，优先使用随万象安装的引擎。也可选择其他版本并测试。"
             wrapMode: Text.Wrap
         }
         Repeater {

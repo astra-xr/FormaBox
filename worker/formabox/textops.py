@@ -120,6 +120,8 @@ def office_engine():
         if candidate.is_absolute() and candidate.is_file() and (os.name!='nt' or candidate.suffix.lower() in ('.exe','.com')):
             return str(candidate)
         return None
+    if bundled := bundled_engine('soffice'):
+        return bundled
     if os.name=='nt':
         for name in ('ProgramFiles','ProgramFiles(x86)'):
             base=os.environ.get(name)

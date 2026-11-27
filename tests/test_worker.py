@@ -398,6 +398,38 @@ def test_searchable_pdf_keeps_rotated_scan_appearance(tmp_path):
     assert pixels(output) == pixels(mixed)
 
 
+@pytest.mark.skipif(os.name != 'nt', reason='Windows engine bundle layout')
+def test_windows_bundled_engines_are_found_and_can_be_overridden(tmp_path, monkeypatch):
+    from formabox import core
+
+    monkeypatch.setattr(core, '__file__', str(tmp_path / 'worker/formabox/core.py'))
+    variables = {
+        'ffmpeg': 'FORMABOX_FFMPEG',
+        'tesseract': 'FORMABOX_TESSERACT',
+        'soffice': 'FORMABOX_SOFFICE',
+    }
+    paths = {}
+    for name, relative in core.BUNDLED_EXECUTABLES.items():
+        executable = tmp_path / 'engines' / relative
+        executable.parent.mkdir(parents=True)
+        executable.touch()
+        monkeypatch.delenv(variables[name], raising=False)
+        paths[name] = executable
+    assert Path(core.find_executable('ffmpeg')) == paths['ffmpeg']
+    assert Path(core.find_executable('tesseract')) == paths['tesseract']
+    assert Path(textops.office_engine()) == paths['soffice']
+
+    data = paths['tesseract'].parent / 'tessdata'
+    data.mkdir()
+    monkeypatch.setenv('TESSDATA_PREFIX', str(tmp_path / 'old-language-data'))
+    assert imageops.tesseract_command(str(paths['tesseract']), '--list-langs')[-2:] == ['--tessdata-dir', data]
+
+    custom = tmp_path / 'ffmpeg.exe'
+    custom.touch()
+    monkeypatch.setenv('FORMABOX_FFMPEG', str(custom))
+    assert Path(core.find_executable('ffmpeg')) == custom
+
+
 def test_engine_configuration_uses_saved_path(tmp_path, monkeypatch):
     from formabox.core import find_executable
 
@@ -510,6 +542,26 @@ def test_media(tmp_path):
     p=tmp_path/'clip.mp4';subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=c=blue:s=160x120:r=15','-f','lavfi','-i','sine=frequency=440','-t','1','-c:v','libx264','-c:a','aac',str(p)],check=True)
     for t,params in [('video.convert',{}),('video.compress',{}),('video.trim',{'duration':.5}),('video.gif',{'duration':.5}),('video.snapshot',{}),('audio.convert',{}),('audio.trim',{'duration':.5}),('audio.volume',{}),('audio.denoise',{})]:
         assert result(run(tmp_path,t,[p],params)).stat().st_size>0,t
+
+@pytest.mark.skipif(not shutil.which('ffmpeg'), reason='FFmpeg unavailable')
+def test_extract_video_frames_in_order(tmp_path):
+    clip = tmp_path / '样本 100%.mp4'
+    subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=160x120:r=10',
+                    '-t', '1.2', '-c:v', 'libx264', str(clip)], check=True)
+    original = clip.read_bytes()
+    reply = run(tmp_path, 'video.frames', [clip], {'interval': .25, 'limit': 3, 'max_side': 80})
+    images = [Path(name) for name in reply['files']]
+    assert [path.name for path in images] == [f'0001-样本 100%-frame-{i:04d}.png' for i in range(1, 4)]
+    pixels = []
+    for path in images:
+        with Image.open(path) as frame:
+            assert frame.size == (80, 60)
+            pixels.append(frame.tobytes())
+    assert len(set(pixels)) == 3
+    assert clip.read_bytes() == original
+    with pytest.raises(ValueError, match='范围'):
+        run(tmp_path, 'video.frames', [clip], {'limit': '61'})
+
 
 @pytest.mark.skipif(not shutil.which('ffmpeg'), reason='FFmpeg unavailable')
 def test_audio_staging_and_limits(tmp_path, monkeypatch):

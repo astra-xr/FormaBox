@@ -137,10 +137,17 @@ def grid(ctx,inputs,p):
     canvas.save(output)
     return [output]
 
+def tesseract_command(engine, *args):
+    data = Path(engine).parent / 'tessdata'
+    if data.is_dir() and (engine == bundled_engine('tesseract') or not os.environ.get('TESSDATA_PREFIX')):
+        return [engine, *args, '--tessdata-dir', data]
+    return [engine, *args]
+
+
 def ocr_engine(ctx, lang):
     if not re.fullmatch(r'[A-Za-z0-9_]+(?:\+[A-Za-z0-9_]+)*',lang): raise ValueError('语言代码无效')
     engine=exe('tesseract')
-    languages=set(ctx.run([engine,'--list-langs'],timeout=15).splitlines())
+    languages=set(ctx.run(tesseract_command(engine, '--list-langs'), timeout=15).splitlines())
     missing=set(lang.split('+'))-languages
     if missing: raise RuntimeError('缺少 OCR 语言包: '+', '.join(sorted(missing)))
     return engine
@@ -155,7 +162,7 @@ def ocr(ctx,inputs,p):
         with tempfile.TemporaryDirectory(prefix='ocr-',dir=ctx.root) as folder:
             work=Path(folder)
             save_png(load(f),work/'input.png')
-            ctx.run([engine,'input.png','result','-l',lang],cwd=work)
+            ctx.run(tesseract_command(engine, 'input.png', 'result', '-l', lang), cwd=work)
             (work/'result.txt').rename(out)
         return out
     return each(ctx,inputs,one)

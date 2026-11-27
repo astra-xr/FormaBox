@@ -102,6 +102,21 @@ def checked_path(value, *, allow_missing=False):
                 raise ValueError(f'不支持链接或重解析点: {component}')
     return (extended_path(absolute) if len(str(absolute))>=248 else absolute).resolve()
 
+BUNDLED_EXECUTABLES = {
+    'ffmpeg': 'ffmpeg/ffmpeg.exe',
+    'tesseract': 'tesseract/tesseract.exe',
+    'soffice': 'libreoffice/program/soffice.com',
+}
+
+
+def bundled_engine(name):
+    relative = BUNDLED_EXECUTABLES.get(name)
+    if relative is None or os.name != 'nt':
+        return None
+    candidate = Path(__file__).resolve().parents[2] / 'engines' / relative
+    return str(candidate) if candidate.is_file() else None
+
+
 def find_executable(name):
     variable = {'ffmpeg': 'FORMABOX_FFMPEG', 'tesseract': 'FORMABOX_TESSERACT'}.get(name)
     configured = os.environ.get(variable) if variable else None
@@ -110,6 +125,8 @@ def find_executable(name):
         if candidate.is_absolute() and candidate.is_file() and (os.name != 'nt' or candidate.suffix.lower() == '.exe'):
             return str(candidate)
         return None
+    if bundled := bundled_engine(name):
+        return bundled
     if os.name!='nt':
         return shutil.which(name)
     for directory in os.get_exec_path():

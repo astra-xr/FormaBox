@@ -1,5 +1,19 @@
 # 实际测试记录
 
+## 0.7.0 视频批量抽帧
+
+Windows x64 的 `python -m pytest -q -ra tests` 通过 59 项。新增用例使用带中文、空格和百分号的文件名，在真实视频中依序提取不同的 PNG 帧，核对尺寸、张数上限和原文件字节。
+
+## 内置引擎开发验收
+
+在 Windows x64 用 MSVC 2022 和 Qt 6.8.3 构建。暂存目录包含 Qt、独立 Python、工作进程及三个引擎。仅保留 Windows 系统 PATH，并清除外部引擎与语言包环境变量后，`python -m formabox check-engines` 通过 FFmpeg 音频生成、Tesseract 识别和 LibreOffice Word 转 PDF。结果路径均位于该暂存目录下的 `engines`。
+
+- `python -m pytest -q -ra tests` 通过 58 项，0 失败、0 跳过。新增用例覆盖内置路径及用户指定路径优先级。
+- `python tests/smoke_tools.py` 使用暂存目录自带的 Python 实跑 65 项工具，0 失败、0 阻塞。另用中文图片识别出「万象文件处理」。
+- 暂存程序及项目根目录的 `FormaBox.exe --verify-runtime` 都返回 0。内置引擎约占 1 GB 安装空间。打包脚本已验证暂存文件、完整包名称与卸载清单。完整安装向导的 NSIS 编译与实机安装仍待完成。
+- Windows 桌面回归验证了两种引擎配置。完整构建在注入无效外部路径和语言包路径后仍通过三项内置引擎试跑，且引擎设置按钮不可见、对话框未加载。常规构建的引擎设置面板可正常打开和关闭。
+- 使用 `scripts/package-windows.ps1 -PrepareOnly` 生成完整包的编译脚本。待打包目录的卸载清单、桌面回归和三个内置引擎试跑均通过。用户在本机 PowerShell 用 NSIS 编译出 `FormaBox-0.6.0-Windows-x64-Full-Setup.exe`，大小为 316,177,979 字节。通过文件长度与 NSIS CRC 校验，并生成 SHA-256 校验文件。自动化会话无法读取现有安装的注册表项，安装和卸载验收因此停在前置检查。
+
 ## 0.6.0 外挂字幕
 
 在 Windows x64 上用 MSVC 2022 与 Qt 6.8.3 构建。运行 `FormaBox.exe --verify-send-to --send-to` 并传入两个带空格的中文路径，桌面验收返回 0。新增回归通过拖入推荐运行「平移 -600 毫秒 → 转 WebVTT → 导出带时间的讲稿」，核对原件字节和最终的 TXT。

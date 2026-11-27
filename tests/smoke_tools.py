@@ -202,6 +202,9 @@ def run_suite(root):
     check('video.gif', [video], lambda p: image_info(p[0])[0] == 'GIF' and Image.open(p[0]).n_frames > 1,
           {'duration': .5, 'width': 80})
     check('video.snapshot', [video], lambda p: image_info(p[0]) == ('PNG', (160, 120)), {'time': .2})
+    check('video.frames', [video], lambda p: len(p) == 3 and
+          all(image_info(frame) == ('PNG', (80, 60)) for frame in p),
+          {'interval': .25, 'limit': 3, 'max_side': 80})
     check('subtitle.convert', [captions], lambda p: p[0].suffix == '.vtt' and
           '00:00:01.000 --> 00:00:03.000\n<b>演示字幕</b>' in p[0].read_text(encoding='utf-8'))
     check('subtitle.shift', [captions], lambda p: p[0].suffix == '.srt' and

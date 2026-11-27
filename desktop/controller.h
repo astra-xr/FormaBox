@@ -19,6 +19,7 @@ class Controller final : public QObject {
  Q_PROPERTY(bool systemDark READ systemDark NOTIFY systemThemeChanged)
  Q_PROPERTY(bool inspecting READ inspecting NOTIFY inspectionChanged)
  Q_PROPERTY(QVariantList presets READ presets NOTIFY presetsChanged)
+ Q_PROPERTY(bool hasBundledEngines READ hasBundledEngines CONSTANT)
 public:
  explicit Controller(QObject *parent=nullptr);
  QVariantList tools() const {return m_tools;}
@@ -29,6 +30,7 @@ public:
  bool systemDark() const;
  bool inspecting() const { return !inspectionCommand.isEmpty(); }
  QVariantList presets() const { return m_presets; }
+ bool hasBundledEngines() const { return !bundledEnginePaths.isEmpty(); }
  Q_INVOKABLE QString savePreset(QString name, const QString &tool, const QVariantMap &params,
                                 const QVariantList &inputs);
  Q_INVOKABLE QString removePreset(const QString &name);
@@ -67,6 +69,7 @@ private:
  struct Request {int index; QJsonObject json;};
  QVariantList m_tools,m_jobs; QString m_status; QProcess catalogue,worker; QByteArray buffer; QQueue<Request> pending; int active=-1;
  QVariantList m_presets;
+ const QVariantMap bundledEnginePaths;
  QString storePreset(QString name, QVariantMap preset, const QVariantList &inputs);
  QString presetParameters(const QString &tool, const QVariantMap &params, QVariantMap &values) const;
  QString writePresets(const QVariantList &presets);

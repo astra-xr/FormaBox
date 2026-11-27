@@ -1,11 +1,13 @@
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'Compile')]
 param(
     [Parameter(Mandatory)][string]$BuildDirectory,
     [Parameter(Mandatory)][string]$Python,
-    [Parameter(Mandatory)][string]$MakeNsis,
+    [Parameter(Mandatory, ParameterSetName = 'Compile')][string]$MakeNsis,
+    [Parameter(Mandatory, ParameterSetName = 'Prepare')][switch]$PrepareOnly,
     [Parameter(Mandatory)][string]$QtPrefix,
     [string]$OutputDirectory = 'build/installers',
-    [string]$CompilerRuntime
+    [string]$CompilerRuntime,
+    [string]$EngineBundleDirectory
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,6 +16,25 @@ $recipe = Join-Path $root 'packaging/windows'
 $versionMatch = Select-String -Path (Join-Path $root 'CMakeLists.txt') -Pattern '^project\(FormaBox VERSION (\d+\.\d+\.\d+) '
 $version = $versionMatch.Matches[0].Groups[1].Value
 $output = (New-Item -ItemType Directory -Path $OutputDirectory -Force).FullName
+
+$bundle = $null
+if ($EngineBundleDirectory) {
+    $bundle = Get-Item -LiteralPath $EngineBundleDirectory
+    if (!$bundle.PSIsContainer -or ($bundle.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw 'The engine bundle must be an ordinary directory'
+    }
+    foreach ($required in @('ffmpeg/ffmpeg.exe', 'tesseract/tesseract.exe',
+            'tesseract/tessdata/eng.traineddata', 'tesseract/tessdata/chi_sim.traineddata',
+            'libreoffice/program/soffice.com', 'libreoffice/program/soffice.bin', 'NOTICES.txt')) {
+        $file = Join-Path $bundle.FullName $required
+        if (!(Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file).Length -eq 0) {
+            throw "The engine bundle is missing $required"
+        }
+    }
+    $linked = Get-ChildItem -LiteralPath $bundle.FullName -Force -Recurse -Attributes ReparsePoint |
+        Select-Object -First 1
+    if ($linked) { throw "The engine bundle contains a reparse point: $($linked.FullName)" }
+}
 
 if (!$CompilerRuntime) {
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
@@ -33,6 +54,7 @@ $qtBom = @(Get-ChildItem (Join-Path $QtPrefix 'sbom') -Filter '*.spdx')
 if (!$qtBom.Count) { throw 'Qt component notices are missing from the selected SDK' }
 $payload = (New-Item -ItemType Directory -Path (Join-Path $output "payload-$([guid]::NewGuid().ToString('N').Substring(0, 8))")).FullName
 $uninstallList = "$payload.nsh"
+$prepared = $false
 
 try {
     & cmake --install $BuildDirectory --config Release --prefix $payload
@@ -48,8 +70,14 @@ try {
     Copy-Item (Join-Path $recipe 'runtime-requirements.txt') $licenses.FullName
     Copy-Item (Join-Path $recipe 'licenses/*.txt') $licenses.FullName
     $qtBom | Copy-Item -Destination $licenses.FullName
+    if ($bundle) {
+        $destination = Join-Path $payload 'engines'
+        & "$env:SystemRoot\System32\robocopy.exe" $bundle.FullName $destination /E /XJ /R:0 /W:0 /NFL /NDL /NJH /NJS /NP
+        if ($LASTEXITCODE -ge 8) { throw 'Engine bundle staging failed' }
+    }
 
-    $setup = Join-Path $output "FormaBox-$version-Windows-x64-Setup.exe"
+    $variant = if ($bundle) { '-Full' } else { '' }
+    $setup = Join-Path $output "FormaBox-$version-Windows-x64${variant}-Setup.exe"
     $escape = { param($path) $path.Substring($payload.Length + 1).Replace('$', '$$') }
     $commands = @(
         Get-ChildItem -LiteralPath $payload -File -Recurse | ForEach-Object {
@@ -61,7 +89,23 @@ try {
     )
     [IO.File]::WriteAllLines($uninstallList, $commands, [Text.UTF8Encoding]::new($true))
     $icon = Join-Path $root 'desktop/assets/formabox.ico'
-    & $MakeNsis /INPUTCHARSET UTF8 /WX "/DSETUP_EXE=$setup" "/DFORMABOX_VERSION=$version" "/DPAYLOAD=$payload" "/DUNINSTALL_LIST=$uninstallList" "/DFORMABOX_ICON=$icon" (Join-Path $recipe 'installer.nsi')
+    $installerScript = Join-Path $recipe 'installer.nsi'
+    if ($PrepareOnly) {
+        $script = Join-Path $output "FormaBox-$version-Windows-x64${variant}-Setup.nsi"
+        $defines = @(
+            ('!define SETUP_EXE "{0}"' -f $setup)
+            ('!define FORMABOX_VERSION "{0}"' -f $version)
+            ('!define PAYLOAD "{0}"' -f $payload)
+            ('!define UNINSTALL_LIST "{0}"' -f $uninstallList)
+            ('!define FORMABOX_ICON "{0}"' -f $icon)
+            ('!include /CHARSET=UTF8 "{0}"' -f $installerScript)
+        )
+        [IO.File]::WriteAllLines($script, $defines, [Text.UTF8Encoding]::new($true))
+        $prepared = $true
+        Write-Host "Prepared $script"
+        return
+    }
+    & $MakeNsis /INPUTCHARSET UTF8 /WX "/DSETUP_EXE=$setup" "/DFORMABOX_VERSION=$version" "/DPAYLOAD=$payload" "/DUNINSTALL_LIST=$uninstallList" "/DFORMABOX_ICON=$icon" $installerScript
     if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $setup -PathType Leaf)) {
         throw 'NSIS installer compilation failed'
     }
@@ -70,11 +114,13 @@ try {
     Write-Host "Built $setup"
 }
 finally {
-    if (Test-Path -LiteralPath $uninstallList) {
-        Remove-Item -LiteralPath $uninstallList
-    }
-    $resolvedPayload = (Resolve-Path -LiteralPath $payload).Path
-    if ($resolvedPayload.StartsWith("$output\", [StringComparison]::OrdinalIgnoreCase)) {
-        Remove-Item -LiteralPath $resolvedPayload -Recurse -Force
+    if (!$prepared) {
+        if (Test-Path -LiteralPath $uninstallList) {
+            Remove-Item -LiteralPath $uninstallList
+        }
+        $resolvedPayload = (Resolve-Path -LiteralPath $payload).Path
+        if ($resolvedPayload.StartsWith("$output\", [StringComparison]::OrdinalIgnoreCase)) {
+            Remove-Item -LiteralPath $resolvedPayload -Recurse -Force
+        }
     }
 }

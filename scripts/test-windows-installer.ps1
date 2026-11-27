@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$Setup)
+param([Parameter(Mandatory)][string]$Setup, [switch]$ExpectBundledEngines)
 
 $ErrorActionPreference = 'Stop'
 $setupPath = (Resolve-Path -LiteralPath $Setup).Path
@@ -31,6 +31,7 @@ try {
     $previousPath = $env:Path
     $env:Path = "$env:SystemRoot\System32;$env:SystemRoot"
     Remove-Item Env:PYTHONHOME,Env:PYTHONPATH,Env:FORMABOX_PYTHON,Env:FORMABOX_WORKER_DIR,Env:QT_PLUGIN_PATH,Env:QML2_IMPORT_PATH,Env:QML_IMPORT_PATH -ErrorAction SilentlyContinue
+    Remove-Item Env:FORMABOX_FFMPEG,Env:FORMABOX_TESSERACT,Env:FORMABOX_SOFFICE,Env:TESSDATA_PREFIX -ErrorAction SilentlyContinue
     $env:QT_QPA_PLATFORM = 'windows'
     $env:QT_QUICK_BACKEND = 'software'
     $env:PYTHONUTF8 = '1'
@@ -53,6 +54,22 @@ try {
     $smokeScript = Join-Path $PSScriptRoot '../tests/smoke_tools.py'
     $reportPath = Join-Path $testRoot 'smoke.json'
     $python = Join-Path $target 'python/python.exe'
+    if ($ExpectBundledEngines) {
+        $json = & $python -X utf8 -B -m formabox check-engines
+        if ($LASTEXITCODE) { throw 'Installed engine diagnostics failed' }
+        $checks = ($json | ConvertFrom-Json).result
+        $engineFiles = @{
+            ffmpeg = 'engines/ffmpeg/ffmpeg.exe'
+            tesseract = 'engines/tesseract/tesseract.exe'
+            LibreOffice = 'engines/libreoffice/program/soffice.com'
+        }
+        foreach ($engine in $engineFiles.Keys) {
+            $expected = (Resolve-Path -LiteralPath (Join-Path $target $engineFiles[$engine])).Path
+            if (!$checks.$engine.ok -or [IO.Path]::GetFullPath($checks.$engine.path) -ne $expected) {
+                throw "Built-in ${engine} did not pass: $($checks.$engine.message)"
+            }
+        }
+    }
     $arguments = '-X utf8 -B "{0}" --scratch "{1}" --report "{2}"' -f $smokeScript, $testRoot, $reportPath
     $smoke = Start-Process -FilePath $python -ArgumentList $arguments -NoNewWindow -Wait -PassThru
     if ($smoke.ExitCode -notin 0, 2 -or !(Test-Path -LiteralPath $reportPath)) {
@@ -61,6 +78,9 @@ try {
     $report = Get-Content -LiteralPath $reportPath -Raw -Encoding utf8 | ConvertFrom-Json
     if ($report.summary.failed -ne 0 -or $report.tools.'pdf.render'.status -ne 'passed') {
         throw 'Installed worker failed or the bundled PDF renderer is missing'
+    }
+    if ($ExpectBundledEngines -and $report.summary.blocked -ne 0) {
+        throw 'At least one packaged tool was unavailable with the bundled engines'
     }
 
     $userFile = Join-Path $target 'python/keep.txt'

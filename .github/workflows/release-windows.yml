@@ -16,7 +16,7 @@ jobs:
   release:
     if: github.ref == 'refs/heads/main'
     runs-on: windows-2022
-    timeout-minutes: 35
+    timeout-minutes: 75
     defaults:
       run:
         shell: pwsh
@@ -30,9 +30,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - name: Prepare bundled engines and source attachments
+        run: |
+          ./scripts/stage-windows-engines.ps1 -EngineDirectory build/windows-engines -SourceDirectory build/engine-sources -WorkDirectory (Join-Path $env:RUNNER_TEMP 'formabox-engines')
       - name: Install and test worker dependencies
         run: |
+          $engineRoot = (Resolve-Path build/windows-engines).Path
+          $env:Path = "$engineRoot\ffmpeg;$engineRoot\tesseract;$env:Path"
+          $env:FORMABOX_SOFFICE = Join-Path $engineRoot 'libreoffice/program/soffice.com'
+          $env:TESSDATA_PREFIX = Join-Path $engineRoot 'tesseract/tessdata'
           python -m pip install -r packaging/windows/runtime-requirements.txt -e './worker[test]'
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m pytest -q -ra tests
       - name: Build Windows x64 desktop
         run: |
@@ -43,21 +51,28 @@ jobs:
           $compiler = Join-Path ${env:ProgramFiles(x86)} 'NSIS/makensis.exe'
           if (!(Test-Path -LiteralPath $compiler)) { throw 'NSIS is missing from the Windows runner image' }
           & $compiler /VERSION
-          ./scripts/package-windows.ps1 -BuildDirectory build/release -Python (Get-Command python).Source -MakeNsis $compiler -QtPrefix $env:QT_ROOT_DIR
+          ./scripts/package-windows.ps1 -BuildDirectory build/release -Python (Get-Command python).Source -MakeNsis $compiler -QtPrefix $env:QT_ROOT_DIR -EngineBundleDirectory build/windows-engines
       - name: Install, start, test and uninstall
         run: |
-          $setup = Get-ChildItem build/installers -Filter '*-Setup.exe' -File
-          ./scripts/test-windows-installer.ps1 -Setup $setup.FullName
+          $setup = Get-ChildItem build/installers -Filter '*-Full-Setup.exe' -File
+          ./scripts/test-windows-installer.ps1 -Setup $setup.FullName -ExpectBundledEngines
       - name: Publish GitHub prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $setup = Get-ChildItem build/installers -Filter '*-Setup.exe' -File
-          if ($setup.Name -notmatch '^FormaBox-(\d+\.\d+\.\d+)-Windows-x64-Setup\.exe$') {
+          $setup = Get-ChildItem build/installers -Filter '*-Full-Setup.exe' -File
+          if ($setup.Name -notmatch '^FormaBox-(\d+\.\d+\.\d+)-Windows-x64-Full-Setup\.exe$') {
               throw 'Unexpected installer filename'
           }
           $version = $Matches[1]
           $tag = "v$version"
           gh release view $tag --json tagName
           if ($LASTEXITCODE -eq 0) { throw "$tag already exists. Bump the project version before publishing." }
-          gh release create $tag $setup.FullName "$($setup.FullName).sha256" --target $env:GITHUB_SHA --title "万象 $version · Windows 预览版" --notes-file packaging/windows/release-notes.md --prerelease
+          $sources = @(
+            'FFmpeg-Windows-Build-Sources.tar.gz',
+            'FFmpeg-Windows-Dependency-Sources.tar',
+            'Tesseract-Windows-Build-Sources.tar.gz'
+          ) | ForEach-Object { (Resolve-Path -LiteralPath (Join-Path 'build/engine-sources' $_)).Path }
+          gh release create $tag $setup.FullName "$($setup.FullName).sha256" @sources --target $env:GITHUB_SHA --title "万象 $version · Windows 完整预览版" --notes-file packaging/windows/release-notes.md --prerelease --draft
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          gh release edit $tag --draft=false

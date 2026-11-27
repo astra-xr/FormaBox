@@ -215,9 +215,6 @@ static bool verifyWorkbench(QQmlApplicationEngine &engine, QObject *root, Contro
         return false;
 
     auto window = engine.newQObject(root);
-    const auto settings = engine.newQObject(root->findChild<QObject *>("engineSettings"));
-    if (!invokeQml(settings, "open") || !invokeQml(settings, "close"))
-        return false;
     const auto urls = QVariantList{QUrl::fromLocalFile(pdfPath), QUrl::fromLocalFile(imagePath)};
     window.setProperty("inputs", engine.toScriptValue(QVariantList{}));
     if (!invokeQml(window, "addUrls", {engine.toScriptValue(urls)}) ||
@@ -306,6 +303,41 @@ static bool verifyWorkbench(QQmlApplicationEngine &engine, QObject *root, Contro
            verifyFileTools(engine, root, controller, imagePath, QDir(files.path()));
 }
 
+static bool verifyEngineControls(QQmlApplicationEngine &engine, QObject *root, Controller &controller)
+{
+    const auto *button = root->findChild<QObject *>("engineSettingsButton");
+    auto *settings = root->findChild<QObject *>("engineSettings");
+    if (!button || button->property("visible").toBool() == controller.hasBundledEngines())
+        return false;
+    if (!controller.hasBundledEngines()) {
+        const auto dialog = engine.newQObject(settings);
+        return invokeQml(dialog, "open") && invokeQml(dialog, "close");
+    }
+    if (settings)
+        return false;
+
+    QVariantMap checks;
+    QEventLoop wait;
+    QObject::connect(&controller, &Controller::enginesChecked, &wait, [&](const QVariantMap &results) {
+        checks = results;
+        wait.quit();
+    });
+    QTimer::singleShot(20000, &wait, &QEventLoop::quit);
+    controller.checkEngines({}, false);
+    if (controller.inspecting())
+        wait.exec();
+    const QDir directory(QDir(QCoreApplication::applicationDirPath()).filePath("engines"));
+    const auto prefix = directory.canonicalPath() + "/";
+    for (const auto *name : {"LibreOffice", "ffmpeg", "tesseract"}) {
+        const auto check = checks.value(name).toMap();
+        if (!check.value("ok").toBool() ||
+            !QFileInfo(check.value("path").toString()).canonicalFilePath().startsWith(prefix))
+            return false;
+    }
+    qInfo("Bundled engine settings hidden and all three local engine checks passed.");
+    return true;
+}
+
 static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controller &controller)
 {
     const auto tools = controller.tools();
@@ -321,6 +353,10 @@ static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controll
     const auto compare = findTool(QStringLiteral("text.diff"));
     if (converter.isEmpty() || compare.isEmpty())
         return false;
+    if (!verifyEngineControls(engine, root, controller)) {
+        qWarning("Engine controls or bundled engine verification failed.");
+        return false;
+    }
 
     auto window = engine.newQObject(root);
     const auto call = [&](const char *method, const QJSValueList &arguments = {}) {
