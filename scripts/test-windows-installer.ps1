@@ -34,25 +34,9 @@ try {
     Remove-Item Env:FORMABOX_FFMPEG,Env:FORMABOX_TESSERACT,Env:FORMABOX_SOFFICE,Env:TESSDATA_PREFIX -ErrorAction SilentlyContinue
     $env:QT_QPA_PLATFORM = 'windows'
     $env:QT_QUICK_BACKEND = 'software'
+    $env:QT_FORCE_STDERR_LOGGING = '1'
     $env:PYTHONUTF8 = '1'
 
-    $sentFiles = @('发送样本 甲.txt', '发送样本 乙.txt') | ForEach-Object {
-        $path = Join-Path $testRoot $_
-        Set-Content -LiteralPath $path -Value 'Send To fixture'
-        $path
-    }
-    $sendArguments = '--verify-send-to "{0}" "{1}"' -f $sentFiles[0], $sentFiles[1]
-    $sendProcess = Start-Process -FilePath $sendToShortcut -ArgumentList $sendArguments -WindowStyle Hidden -PassThru
-    if (!$sendProcess) { throw 'Windows did not start a process from the Send To shortcut' }
-    if (!$sendProcess.WaitForExit(55000)) {
-        $sendProcess.Kill()
-        throw 'Send To shortcut did not complete runtime verification in 55 seconds'
-    }
-    if ($sendProcess.ExitCode) {
-        throw "Send To shortcut failed runtime verification with code $($sendProcess.ExitCode)"
-    }
-    $smokeScript = Join-Path $PSScriptRoot '../tests/smoke_tools.py'
-    $reportPath = Join-Path $testRoot 'smoke.json'
     $python = Join-Path $target 'python/python.exe'
     if ($ExpectBundledEngines) {
         $json = & $python -X utf8 -B -m formabox check-engines
@@ -68,8 +52,35 @@ try {
             if (!$checks.$engine.ok -or [IO.Path]::GetFullPath($checks.$engine.path) -ne $expected) {
                 throw "Built-in ${engine} did not pass: $($checks.$engine.message)"
             }
+            Write-Host "Installed ${engine}: $($checks.$engine.message)"
         }
     }
+
+    $sentFiles = @('发送样本 甲.txt', '发送样本 乙.txt') | ForEach-Object {
+        $path = Join-Path $testRoot $_
+        Set-Content -LiteralPath $path -Value 'Send To fixture'
+        $path
+    }
+    $sendArguments = '--verify-send-to "{0}" "{1}"' -f $sentFiles[0], $sentFiles[1]
+    $sendProcess = Start-Process -FilePath $sendToShortcut -ArgumentList $sendArguments -WindowStyle Hidden -PassThru
+    if (!$sendProcess) { throw 'Windows did not start a process from the Send To shortcut' }
+    if (!$sendProcess.WaitForExit(55000)) {
+        $sendProcess.Kill()
+        throw 'Send To shortcut did not complete runtime verification in 55 seconds'
+    }
+    if ($sendProcess.ExitCode) {
+        $log = Join-Path $testRoot 'desktop-diagnostics.txt'
+        $application = Join-Path $target 'FormaBox.exe'
+        $diagnostic = Start-Process -FilePath $application -ArgumentList "--send-to $sendArguments" -WindowStyle Hidden -PassThru -RedirectStandardError $log
+        if (!$diagnostic.WaitForExit(55000)) { $diagnostic.Kill() }
+        if (Test-Path -LiteralPath $log) {
+            Get-Content -LiteralPath $log -Encoding utf8
+        }
+        throw "Send To shortcut failed runtime verification with code $($sendProcess.ExitCode)"
+    }
+    Write-Host 'Send To and desktop runtime verified.'
+    $smokeScript = Join-Path $PSScriptRoot '../tests/smoke_tools.py'
+    $reportPath = Join-Path $testRoot 'smoke.json'
     $arguments = '-X utf8 -B "{0}" --scratch "{1}" --report "{2}"' -f $smokeScript, $testRoot, $reportPath
     $smoke = Start-Process -FilePath $python -ArgumentList $arguments -NoNewWindow -Wait -PassThru
     if ($smoke.ExitCode -notin 0, 2 -or !(Test-Path -LiteralPath $reportPath)) {

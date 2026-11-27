@@ -56,6 +56,15 @@ jobs:
         run: |
           $setup = Get-ChildItem build/installers -Filter '*-Full-Setup.exe' -File
           ./scripts/test-windows-installer.ps1 -Setup $setup.FullName -ExpectBundledEngines
+      - name: Retain installer when validation fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-validation
+          path: build/installers/*-Full-Setup.exe*
+          compression-level: 0
+          retention-days: 3
+          if-no-files-found: ignore
       - name: Publish GitHub prerelease
         env:
           GH_TOKEN: ${{ github.token }}

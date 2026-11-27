@@ -316,25 +316,17 @@ static bool verifyEngineControls(QQmlApplicationEngine &engine, QObject *root, C
     if (settings)
         return false;
 
-    QVariantMap checks;
-    QEventLoop wait;
-    QObject::connect(&controller, &Controller::enginesChecked, &wait, [&](const QVariantMap &results) {
-        checks = results;
-        wait.quit();
-    });
-    QTimer::singleShot(20000, &wait, &QEventLoop::quit);
-    controller.checkEngines({}, false);
-    if (controller.inspecting())
-        wait.exec();
-    const QDir directory(QDir(QCoreApplication::applicationDirPath()).filePath("engines"));
-    const auto prefix = directory.canonicalPath() + "/";
-    for (const auto *name : {"LibreOffice", "ffmpeg", "tesseract"}) {
-        const auto check = checks.value(name).toMap();
-        if (!check.value("ok").toBool() ||
-            !QFileInfo(check.value("path").toString()).canonicalFilePath().startsWith(prefix))
-            return false;
+    QStringList available = {"video.frames", "image.ocr", "doc.pdf"};
+    for (const auto &entry : controller.tools()) {
+        const auto tool = entry.toMap();
+        if (tool.value("missing_engines").toList().isEmpty())
+            available.removeAll(tool.value("id").toString());
     }
-    qInfo("Bundled engine settings hidden and all three local engine checks passed.");
+    if (!available.isEmpty()) {
+        qWarning().noquote() << "Bundled tools unavailable:" << available.join(", ");
+        return false;
+    }
+    qInfo("Bundled engine settings hidden and all three engine categories available.");
     return true;
 }
 
