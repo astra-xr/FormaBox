@@ -38,25 +38,32 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           cmake --build build/desktop --config Release --parallel
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cmake --install build/desktop --config Release --prefix build/desktop-check/dist
+          $stage = Join-Path $env:GITHUB_WORKSPACE 'build/desktop-check'
+          cmake --install build/desktop --config Release --prefix (Join-Path $stage 'dist')
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           Copy-Item -LiteralPath build/desktop/launcher/Release/Omnora.exe -Destination build/desktop-check/Omnora.exe
           $env:FORMABOX_PYTHON = (Get-Command python).Source
           $env:QT_QUICK_BACKEND = 'software'
           $env:QT_FORCE_STDERR_LOGGING = '1'
-          $process = Start-Process -FilePath (Resolve-Path 'build/desktop-check/Omnora.exe') -ArgumentList '--verify-runtime' -WindowStyle Hidden -PassThru -Wait
-          exit $process.ExitCode
+          $process = Start-Process -FilePath (Join-Path $stage 'Omnora.exe') -ArgumentList '--verify-runtime' -WindowStyle Hidden -PassThru -Wait
+          if ($process.ExitCode) {
+              $log = Join-Path $stage 'desktop.log'
+              Start-Process -FilePath (Join-Path $stage 'dist/Omnora.exe') -ArgumentList '--verify-runtime' -WindowStyle Hidden -RedirectStandardError $log -Wait
+              Get-Content -LiteralPath $log -Encoding utf8
+              exit $process.ExitCode
+          }
       - name: Compile the installer template
         shell: pwsh
         run: |
           $compiler = Join-Path ${env:ProgramFiles(x86)} 'NSIS/makensis.exe'
-          $fixture = New-Item -ItemType Directory -Path 'build/installer-check/payload'
+          $fixture = New-Item -ItemType Directory -Force -Path 'build/installer-check/payload'
           Copy-Item -LiteralPath build/desktop-check/dist/Omnora.exe -Destination $fixture.FullName
           $uninstall = Join-Path $fixture.Parent.FullName 'uninstall.nsh'
           'Delete "$INSTDIR\Omnora.exe"' | Set-Content -LiteralPath $uninstall -Encoding utf8BOM
           $setup = Join-Path $fixture.Parent.FullName 'Omnora-installer-check.exe'
           $icon = (Resolve-Path 'desktop/assets/formabox.ico').Path
-          & $compiler /INPUTCHARSET UTF8 /WX "/DSETUP_EXE=$setup" /DFORMABOX_VERSION=0.9.0 "/DPAYLOAD=$($fixture.FullName)" "/DUNINSTALL_LIST=$uninstall" "/DFORMABOX_ICON=$icon" packaging/windows/installer.nsi
+          $version = (Select-String -LiteralPath CMakeLists.txt -Pattern '^project\(Omnora VERSION (\d+\.\d+\.\d+) ').Matches[0].Groups[1].Value
+          & $compiler /INPUTCHARSET UTF8 /WX "/DSETUP_EXE=$setup" "/DFORMABOX_VERSION=$version" "/DPAYLOAD=$($fixture.FullName)" "/DUNINSTALL_LIST=$uninstall" "/DFORMABOX_ICON=$icon" packaging/windows/installer.nsi
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           if ((Get-Item -LiteralPath $setup).VersionInfo.ProductName -ne '万象（Omnora）') {
               throw 'Installer metadata does not match the application name'
