@@ -6,6 +6,8 @@ Windows x64 使用 MSVC 2022 和 Qt 6.8.3 编译并运行 `FormaBox.exe --verify
 
 本机 `python -m pytest -q -ra tests` 通过 59 项，`python tests/smoke_tools.py` 实跑 66 个工具，失败和阻塞均为 0。桌面回归同时覆盖 PDF 页面工作台、结果、重命名预览、预设、多步工作流和字幕。
 
+发布流程在 Windows 上用 0.8.0 完整安装包安装到带中文和空格的路径。通过明暗主题、常用工具、分类和搜索、按钮反光、资源管理器「发送到」、三个内置引擎、66 项实跑，以及卸载保留用户文件的验收。[发布验收记录](https://github.com/astra-xr/FormaBox/actions/runs/45973825707)
+
 ## 0.7.0 视频批量抽帧与 Windows 完整安装包
 
 Windows x64 的 `python -m pytest -q -ra tests` 通过 59 项。新增用例使用带中文、空格和百分号的文件名，在真实视频中依序提取不同的 PNG 帧，核对尺寸、张数上限和原文件字节。
