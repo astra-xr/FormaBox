@@ -88,6 +88,8 @@ def run_suite(root):
     writer.write(pdf)
     document = samples / '短文档.rtf'
     document.write_text(r'{\rtf1\ansi FormaBox Test}', encoding='ascii')
+    captions = samples / '中文 字幕.srt'
+    captions.write_text('1\n00:00:01,000 --> 00:00:03,000\n<b>演示字幕</b>\n', encoding='utf-8-sig')
 
     plain = samples / '示例.txt'
     plain.write_text('中文\n中文\n\nabc\n', encoding='utf-8')
@@ -200,6 +202,11 @@ def run_suite(root):
     check('video.gif', [video], lambda p: image_info(p[0])[0] == 'GIF' and Image.open(p[0]).n_frames > 1,
           {'duration': .5, 'width': 80})
     check('video.snapshot', [video], lambda p: image_info(p[0]) == ('PNG', (160, 120)), {'time': .2})
+    check('subtitle.convert', [captions], lambda p: p[0].suffix == '.vtt' and
+          '00:00:01.000 --> 00:00:03.000\n<b>演示字幕</b>' in p[0].read_text(encoding='utf-8'))
+    check('subtitle.shift', [captions], lambda p: p[0].suffix == '.srt' and
+          '00:00:00,250 --> 00:00:02,250' in p[0].read_text(encoding='utf-8'), {'offset_ms': -750})
+    check('subtitle.transcript', [captions], lambda p: p[0].read_text(encoding='utf-8') == '演示字幕\n')
     check('audio.convert', [video], lambda p: media_test(p[0], '0:a:0'), {'format': 'flac'})
     check('audio.trim', [video], lambda p: .45 < wav_duration(p[0]) < .55, {'start': .1, 'duration': .5})
     check('audio.volume', [video], lambda p: wav_duration(p[0]) > .9, {'db': -10, 'normalize': True})

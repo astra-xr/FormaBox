@@ -1,6 +1,7 @@
 #include <QDebug>
 #include <QDir>
 #include <QEventLoop>
+#include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QIcon>
@@ -50,16 +51,16 @@ static bool runTask(Controller &controller, const std::function<bool()> &start)
            controller.jobs().constLast().toMap().value("state") == QStringLiteral("完成");
 }
 
-static bool verifyPdfEdits(QQmlApplicationEngine &engine, QObject *root, Controller &controller,
-                           const QString &source, const QString &destination)
+static bool runSuggestedWorkflow(QQmlApplicationEngine &engine, QObject *root, Controller &controller,
+                                 const QString &source, const QString &destination,
+                                 const QList<QPair<QString, QVariantMap>> &steps)
 {
     auto window = engine.newQObject(root);
     window.setProperty("inputs", engine.toScriptValue(QVariantList{source}));
     window.setProperty("steps", engine.toScriptValue(QVariantList{}));
     root->findChild<QObject *>("outputDirectory")->setProperty("text", destination);
-    const QStringList tools = {"pdf.crop", "pdf.number", "pdf.watermark"};
     const auto suggestions = window.property("suggestions");
-    for (const auto &tool : tools) {
+    for (const auto &[tool, params] : steps) {
         QJSValue spec;
         for (int index = 0; index < suggestions.property("length").toInt(); ++index) {
             const auto candidate = suggestions.property(index);
@@ -68,23 +69,59 @@ static bool verifyPdfEdits(QQmlApplicationEngine &engine, QObject *root, Control
                 break;
             }
         }
-        if (!spec.isObject() || !invokeQml(window, "chooseTool", {spec}) ||
-            !invokeQml(window, "setParam", {QJSValue("pages"), QJSValue("1")}) ||
-            !invokeQml(window, "addStep"))
+        if (!spec.isObject() || !invokeQml(window, "chooseTool", {spec}))
+            return false;
+        for (auto parameter = params.cbegin(); parameter != params.cend(); ++parameter)
+            if (!invokeQml(window, "setParam", {QJSValue(parameter.key()), engine.toScriptValue(parameter.value())}))
+                return false;
+        if (!invokeQml(window, "addStep"))
             return false;
     }
     QVariantMap preset{
         {"steps", window.property("steps").toVariant()},
-        {"suffixes", QStringList{"pdf"}},
+        {"suffixes", QStringList{QFileInfo(source).suffix().toLower()}},
     };
-    if (!window.property("workflowReady").toBool() || !runTask(controller, [&] {
+    return window.property("workflowReady").toBool() && runTask(controller, [&] {
         return invokeQml(window, "runPreset", {engine.toScriptValue(preset)});
-    }))
+    });
+}
+
+static bool verifyPdfEdits(QQmlApplicationEngine &engine, QObject *root, Controller &controller,
+                           const QString &source, const QString &destination)
+{
+    const QVariantMap firstPage{{"pages", "1"}};
+    if (!runSuggestedWorkflow(engine, root, controller, source, destination,
+                              {{"pdf.crop", firstPage}, {"pdf.number", firstPage}, {"pdf.watermark", firstPage}}))
         return false;
     const auto outputs = controller.resultItems(controller.jobs().size() - 1);
     return outputs.size() == 1 &&
            outputs.constFirst().toMap().value("path").toString().endsWith("-watermarked.pdf") &&
            outputs.constFirst().toMap().value("canOpen").toBool();
+}
+
+static bool verifySubtitles(QQmlApplicationEngine &engine, QObject *root, Controller &controller)
+{
+    QTemporaryDir directory;
+    if (!directory.isValid())
+        return false;
+    QFile source(directory.filePath(QStringLiteral("中文字幕 样本.srt")));
+    const auto original = QStringLiteral("1\n00:00:01,100 --> 00:00:02,800\n<b>测试字幕</b>\n\n").toUtf8();
+    if (!source.open(QIODevice::WriteOnly) || source.write(original) != original.size())
+        return false;
+    source.close();
+    if (!runSuggestedWorkflow(engine, root, controller, source.fileName(), directory.filePath("output"),
+                              {{"subtitle.shift", {{"offset_ms", "-600"}}},
+                               {"subtitle.convert", {{"format", "vtt"}}},
+                               {"subtitle.transcript", {{"timestamps", true}}}}))
+        return false;
+    const auto outputs = controller.resultItems(controller.jobs().size() - 1);
+    if (outputs.size() != 1)
+        return false;
+    const auto item = outputs.constFirst().toMap();
+    QFile transcript(item.value("path").toString());
+    return item.value("canOpen").toBool() && transcript.open(QIODevice::ReadOnly) &&
+           transcript.readAll() == QStringLiteral("[00:00:00.500]\n测试字幕\n").toUtf8() &&
+           source.open(QIODevice::ReadOnly) && source.readAll() == original;
 }
 
 static bool verifyFileTools(QQmlApplicationEngine &engine, QObject *root, Controller &controller,
@@ -303,9 +340,10 @@ static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controll
 
     window.setProperty("inputs", engine.toScriptValue(
         QVariantList{QStringLiteral("one.txt"), QStringLiteral("two.txt")}));
-    const bool ready = window.property("workflowReady").toBool() && verifyWorkbench(engine, root, controller);
+    const bool ready = window.property("workflowReady").toBool() &&
+                       verifyWorkbench(engine, root, controller) && verifySubtitles(engine, root, controller);
     if (ready)
-        qInfo("Desktop checks passed: PDF export and edits, task results, rename preview, and multi-step presets.");
+        qInfo("Desktop checks passed: PDF export and edits, task results, rename preview, multi-step presets, and subtitles.");
     return ready;
 }
 

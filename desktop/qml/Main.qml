@@ -290,6 +290,8 @@ ApplicationWindow {
             ids = ["pdf.compose"]
         else if (suffixes.every(suffix => video.includes(suffix)))
             ids = ["video.convert", "video.compress", "audio.convert"]
+        else if (suffixes.every(suffix => suffix === "srt" || suffix === "vtt"))
+            ids = ["subtitle.convert", "subtitle.shift", "subtitle.transcript"]
         else if (suffixes.every(suffix => audio.includes(suffix)))
             ids = ["audio.convert", "audio.concat"]
         else if (suffixes.every(suffix => suffix === "zip"))

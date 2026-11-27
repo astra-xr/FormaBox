@@ -21,6 +21,77 @@ def pdf(tmp_path):
 def test_manifest():
     manifest=Path(__file__).resolve().parents[1]/'docs'/'tools-manifest.json'
     assert json.loads(manifest.read_text(encoding='utf-8'))==[spec for spec,_ in TOOLS.values()]
+
+
+def test_subtitle_conversion_sorts_and_preserves_text(tmp_path):
+    source = tmp_path / '中文 片段.SRT'
+    original = ('8\r\n01:00:00,005 --> 01:00:02,000\r\n<i>第二句</i>\r\n\r\n'
+                '3\r\n00:00:59,050 --> 00:01:00,000\r\n<b>第一句</b> 2 < 3 & 7\r\n第二行\r\n').encode('utf-16')
+    source.write_bytes(original)
+    vtt = result(run(tmp_path, 'subtitle.convert', [source]))
+    assert vtt.suffix == '.vtt'
+    assert vtt.read_text(encoding='utf-8') == (
+        'WEBVTT\n\n00:00:59.050 --> 00:01:00.000\n<b>第一句</b> 2 &lt; 3 &amp; 7\n第二行\n\n'
+        '01:00:00.005 --> 01:00:02.000\n<i>第二句</i>\n\n')
+    srt = result(run(tmp_path, 'subtitle.convert', [vtt], {'format': 'srt'}))
+    assert srt.read_text(encoding='utf-8') == (
+        '1\n00:00:59,050 --> 00:01:00,000\n<b>第一句</b> 2 < 3 & 7\n第二行\n\n'
+        '2\n01:00:00,005 --> 01:00:02,000\n<i>第二句</i>\n\n')
+    assert source.read_bytes() == original
+
+
+def test_subtitle_shift_retains_layout_and_synchronizes_inline_cues(tmp_path):
+    source = tmp_path / '课程 字幕.vtt'
+    source.write_text(
+        'WEBVTT Example\n\nSTYLE\n::cue { color: red }\n\nNOTE private comment\n\n'
+        '00:00.010 --> 00:00.100\nremoved\n\nintro\n'
+        '00:00.250 --> 00:02.000 align:start position:10%\n<v Host>开场<00:00.750>前半<00:01.250>后半</v>\n\n'
+        '00:02.000 --> 00:02.300\n结尾\n',
+        encoding='utf-8-sig',
+    )
+    shifted = result(run(tmp_path, 'subtitle.shift', [source], {'offset_ms': -1000}))
+    assert shifted.read_text(encoding='utf-8') == (
+        'WEBVTT Example\n\nSTYLE\n::cue { color: red }\n\nNOTE private comment\n\nintro\n'
+        '00:00:00.000 --> 00:00:01.000 align:start position:10%\n<v Host>开场前半<00:00:00.250>后半</v>\n\n'
+        '00:00:01.000 --> 00:00:01.300\n结尾\n\n')
+    plain = result(run(tmp_path, 'subtitle.transcript', [shifted], {'timestamps': True}))
+    assert plain.read_text(encoding='utf-8') == '[00:00:00.000]\n开场前半后半\n\n[00:00:01.000]\n结尾\n'
+
+
+def test_subtitle_positive_shift_batch_and_workflow(tmp_path):
+    first = tmp_path / '第 一.srt'
+    first.write_text('1\n00:59:59,999 --> 01:00:00,100\n中文行\n', encoding='utf-8')
+    second = tmp_path / '第 二.vtt'
+    second.write_text('WEBVTT\n\n00:00.100 --> 00:00.300\nA&amp;B\n', encoding='utf-8')
+    reply = run(tmp_path, 'subtitle.shift', [first, second], {'offset_ms': 2})
+    shifted = [Path(path) for path in reply['files']]
+    assert [path.suffix for path in shifted] == ['.srt', '.vtt']
+    assert '01:00:00,001 --> 01:00:00,102' in shifted[0].read_text(encoding='utf-8')
+    assert '00:00:00.102 --> 00:00:00.302' in shifted[1].read_text(encoding='utf-8')
+    reply = execute({
+        'inputs': [str(first), str(second)], 'output': str(tmp_path / 'out'), 'steps': [
+            {'tool': 'subtitle.convert', 'params': {'format': 'srt'}},
+            {'tool': 'subtitle.transcript', 'params': {}},
+        ],
+    }, lambda *args, **kwargs: None)
+    assert [Path(path).read_text(encoding='utf-8') for path in reply['files']] == ['中文行\n', 'A&B\n']
+
+
+def test_subtitle_errors_leave_no_partial_output(tmp_path):
+    good = tmp_path / 'good.srt'
+    good.write_text('1\n00:00:00,020 --> 00:00:00,500\nHello\n', encoding='utf-8')
+    bad = tmp_path / 'bad.vtt'
+    bad.write_text('WEBVTT\n\n00:60.000 --> 00:01.000\nInvalid time\n', encoding='utf-8')
+    with pytest.raises(ValueError, match='bad.vtt · 第 3 行'):
+        run(tmp_path, 'subtitle.convert', [good, bad])
+    with pytest.raises(ValueError, match='所有字幕都早于'):
+        run(tmp_path, 'subtitle.shift', [good], {'offset_ms': -500})
+    bad.write_bytes(b'WEBVTT\r\n\r\n\xff')
+    with pytest.raises(ValueError, match='UTF-8'):
+        run(tmp_path, 'subtitle.transcript', [bad])
+    assert not list((tmp_path / 'out').iterdir())
+
+
 def test_image_convert(tmp_path,img):
     p=result(run(tmp_path,'image.convert',[img])); assert Image.open(p).format=='JPEG' and img.exists()
 def test_target(tmp_path,img):

@@ -35,7 +35,7 @@ bool canOpenResult(const QFileInfo &file) {
  const auto suffix = file.suffix().toLower();
  static const QStringList formats = {"pdf", "png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff", "avif",
      "ico", "docx", "xlsx", "pptx", "rtf", "txt", "json", "csv", "zip", "mp4", "mkv", "webm",
-     "mov", "avi", "mp3", "wav", "flac", "ogg", "m4a", "aac", "opus"};
+     "mov", "avi", "srt", "vtt", "mp3", "wav", "flac", "ogg", "m4a", "aac", "opus"};
  return file.isDir() || formats.contains(suffix);
 }
 

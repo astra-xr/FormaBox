@@ -52,6 +52,59 @@ def snapshot(ctx,inputs,p):
     t=number(p,'time',0,1e8)
     return batch(ctx,inputs,'png',lambda f,d:ff(ctx,f,d,['-ss',str(t),'-frames:v','1','-threads','1']))
 
+
+@tool('subtitle.convert', '视频', '字幕格式转换',
+      [param('format', '输出格式', 'vtt', 'choice', ['srt', 'vtt'])], maximum=32,
+      description='SRT 与 WebVTT 互转，保留时间、字幕正文及常见粗体、斜体、下划线。更换格式时布局和样式块会省略。')
+def convert_subtitles(ctx, inputs, params):
+    from .subtitles import read_subtitles, write_subtitles
+
+    target = choice(params, 'format', ('srt', 'vtt'))
+    outputs = []
+    for index, source in enumerate(inputs, 1):
+        ctx.tick(index - 1, len(inputs), source.name)
+        document = read_subtitles(ctx, source)
+        output = ctx.path(f'{index:04d}-{source.stem}-converted.{target}')
+        write_subtitles(ctx, document, output, target)
+        outputs.append(output)
+    return outputs
+
+
+@tool('subtitle.shift', '视频', '字幕时间轴平移',
+      [param('offset_ms', '偏移（毫秒，负数提前）', '1000', 'number')], maximum=32,
+      description='统一提前或延后全部字幕。跨过零点的条目从 0 秒开始，完全早于零点的条目移除。保留输入格式。')
+def adjust_subtitle_timing(ctx, inputs, params):
+    from .subtitles import read_subtitles, shift_subtitles, write_subtitles
+
+    offset = integer(params, 'offset_ms', -86_400_000, 86_400_000)
+    outputs = []
+    for index, source in enumerate(inputs, 1):
+        ctx.tick(index - 1, len(inputs), source.name)
+        document = read_subtitles(ctx, source)
+        adjusted = shift_subtitles(ctx, document, offset)
+        output = ctx.path(f'{index:04d}-{source.stem}-shifted.{document.format}')
+        write_subtitles(ctx, adjusted, output, document.format)
+        outputs.append(output)
+    return outputs
+
+
+@tool('subtitle.transcript', '视频', '字幕提取纯文本',
+      [param('timestamps', '保留起始时间', 'false', 'bool')], maximum=32,
+      description='将 SRT 或 WebVTT 字幕正文导出为 UTF-8 TXT，可在每段开头保留起始时间。')
+def subtitle_transcript(ctx, inputs, params):
+    from .subtitles import read_subtitles, write_transcript
+
+    timestamps = truth(params['timestamps'])
+    outputs = []
+    for index, source in enumerate(inputs, 1):
+        ctx.tick(index - 1, len(inputs), source.name)
+        document = read_subtitles(ctx, source)
+        output = ctx.path(f'{index:04d}-{source.stem}-transcript.txt')
+        write_transcript(ctx, document, output, timestamps)
+        outputs.append(output)
+    return outputs
+
+
 @tool('audio.convert','音频','音频转换 / 视频提取音频',[param('format','格式','mp3','choice',list(AUDIO)),param('bitrate','有损码率 kbps','192','number')],engines=['ffmpeg'])
 def audio(ctx,inputs,p):
     ext=choice(p,'format',AUDIO); b=integer(p,'bitrate',32,320); args=['-vn','-map','0:a:0',*AUDIO[ext]]

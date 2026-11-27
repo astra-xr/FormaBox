@@ -1,5 +1,13 @@
 # 实际测试记录
 
+## 0.6.0 外挂字幕
+
+在 Windows x64 上用 MSVC 2022 与 Qt 6.8.3 构建。运行 `FormaBox.exe --verify-send-to --send-to` 并传入两个带空格的中文路径，桌面验收返回 0。新增回归通过拖入推荐运行「平移 -600 毫秒 → 转 WebVTT → 导出带时间的讲稿」，核对原件字节和最终的 TXT。
+
+- `python -m pytest -q -ra tests` 通过 57 项，无失败或跳过。新增用例检查中文与 UTF-16 输入、互转后多行正文、WebVTT 样式和行内时间码、负偏移过零、跨小时进位、混合格式批量和错误回滚。
+- `python tests/smoke_tools.py` 在关闭可选引擎时通过 51 项内置工具，无失败。FFmpeg、Tesseract 与 LibreOffice 对应的 14 项逐工具实跑按缺引擎跳过。
+- 字幕输入为独立 SRT 或 WebVTT 文件。视频内嵌字幕的抽取和封装保留在路线图。跨格式转换省略布局设置和扩展样式。
+
 ## 0.5.0 PDF 页码、文字水印与裁白边
 
 在 Windows x64 上用 MSVC 2022 与 Qt 6.8.3 构建。用 `FormaBox.exe --verify-send-to --send-to` 传入两个带空格的中文路径，桌面回归返回 0。回归从 PDF 拖入推荐选择三项新工具，执行先裁边、再加页码、最后加文字水印的三步工作流，并检查任务结果。

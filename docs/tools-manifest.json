@@ -839,6 +839,63 @@
     ]
   },
   {
+    "id": "subtitle.convert",
+    "category": "视频",
+    "label": "字幕格式转换",
+    "params": [
+      {
+        "key": "format",
+        "label": "输出格式",
+        "default": "vtt",
+        "kind": "choice",
+        "choices": [
+          "srt",
+          "vtt"
+        ]
+      }
+    ],
+    "minimum": 1,
+    "maximum": 32,
+    "description": "SRT 与 WebVTT 互转，保留时间、字幕正文及常见粗体、斜体、下划线。更换格式时布局和样式块会省略。",
+    "engines": []
+  },
+  {
+    "id": "subtitle.shift",
+    "category": "视频",
+    "label": "字幕时间轴平移",
+    "params": [
+      {
+        "key": "offset_ms",
+        "label": "偏移（毫秒，负数提前）",
+        "default": "1000",
+        "kind": "number",
+        "choices": []
+      }
+    ],
+    "minimum": 1,
+    "maximum": 32,
+    "description": "统一提前或延后全部字幕。跨过零点的条目从 0 秒开始，完全早于零点的条目移除。保留输入格式。",
+    "engines": []
+  },
+  {
+    "id": "subtitle.transcript",
+    "category": "视频",
+    "label": "字幕提取纯文本",
+    "params": [
+      {
+        "key": "timestamps",
+        "label": "保留起始时间",
+        "default": "false",
+        "kind": "bool",
+        "choices": []
+      }
+    ],
+    "minimum": 1,
+    "maximum": 32,
+    "description": "将 SRT 或 WebVTT 字幕正文导出为 UTF-8 TXT，可在每段开头保留起始时间。",
+    "engines": []
+  },
+  {
     "id": "audio.convert",
     "category": "音频",
     "label": "音频转换 / 视频提取音频",
