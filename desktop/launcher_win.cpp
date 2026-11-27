@@ -16,7 +16,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR arguments, int)
     module.resize(length);
 
     const auto directory = std::filesystem::path(module).parent_path() / L"dist";
-    const auto executable = directory / L"FormaBox.exe";
+    const auto executable = directory / L"Omnora.exe";
     const auto attributes = GetFileAttributesW(executable.c_str());
     if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY)) {
         const auto message = L"找不到万象的应用程序：\n" + executable.native() +

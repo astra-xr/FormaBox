@@ -6,7 +6,7 @@ import QtQuick.Dialogs
 ApplicationWindow {
     id: root
     width: 1200; height: 800; minimumWidth: 860; minimumHeight: 600
-    title: "万象"
+    title: Qt.application.displayName
     property bool immersiveFrame: windowsFrameSupported
     property string themeMode: "system"
     readonly property bool dark: themeMode === "system" ? backend.systemDark : themeMode === "dark"

@@ -178,7 +178,7 @@ def ocr(ctx,inputs,p):
         return out
     return each(ctx,inputs,one)
 
-@tool('image.watermark','图片','文字水印',[param('text','水印文字','FormaBox'),param('font','字体路径（中文需指定）',''),param('size','字号','32','number')])
+@tool('image.watermark','图片','文字水印',[param('text','水印文字','Omnora'),param('font','字体路径（中文需指定）',''),param('size','字号','32','number')])
 def watermark(ctx,inputs,p):
     size=integer(p,'size',8,512); text=str(p['text']); font=ImageFont.truetype(str(p['font']),size) if p['font'] else ImageFont.load_default(size=size)
     def one(f,i):

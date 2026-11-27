@@ -13,7 +13,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
 $recipe = Join-Path $root 'packaging/windows'
-$versionMatch = Select-String -Path (Join-Path $root 'CMakeLists.txt') -Pattern '^project\(FormaBox VERSION (\d+\.\d+\.\d+) '
+$versionMatch = Select-String -Path (Join-Path $root 'CMakeLists.txt') -Pattern '^project\(Omnora VERSION (\d+\.\d+\.\d+) '
 $version = $versionMatch.Matches[0].Groups[1].Value
 $output = (New-Item -ItemType Directory -Path $OutputDirectory -Force).FullName
 
@@ -83,7 +83,7 @@ try {
     }
 
     $variant = if ($bundle) { '-Full' } else { '' }
-    $setup = Join-Path $output "FormaBox-$version-Windows-x64${variant}-Setup.exe"
+    $setup = Join-Path $output "Omnora-$version-Windows-x64${variant}-Setup.exe"
     $escape = { param($path) $path.Substring($payload.Length + 1).Replace('$', '$$') }
     $commands = @(
         Get-ChildItem -LiteralPath $payload -File -Recurse | ForEach-Object {
@@ -97,7 +97,7 @@ try {
     $icon = Join-Path $root 'desktop/assets/formabox.ico'
     $installerScript = Join-Path $recipe 'installer.nsi'
     if ($PrepareOnly) {
-        $script = Join-Path $output "FormaBox-$version-Windows-x64${variant}-Setup.nsi"
+        $script = Join-Path $output "Omnora-$version-Windows-x64${variant}-Setup.nsi"
         $defines = @(
             ('!define SETUP_EXE "{0}"' -f $setup)
             ('!define FORMABOX_VERSION "{0}"' -f $version)

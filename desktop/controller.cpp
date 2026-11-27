@@ -117,7 +117,7 @@ Controller::Controller(QObject *parent):QObject(parent), bundledEnginePaths(dete
  });
  QTimer::singleShot(0,this,&Controller::reload);
 }
-QString Controller::outputDefault()const{return QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).filePath("FormaBox Output");}
+QString Controller::outputDefault()const{return QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).filePath("Omnora Output");}
 bool Controller::systemDark()const{return QGuiApplication::styleHints()->colorScheme()==Qt::ColorScheme::Dark;}
 void Controller::setStatus(QString s){m_status=std::move(s);emit statusChanged();}
 void Controller::configure(QProcess &p, const QVariantMap *overrides){
@@ -415,7 +415,7 @@ QString Controller::savePdfCompression(const QString &output) {
  QFile preview(compressionPreview->filePath("compressed.pdf"));
  if (!preview.open(QIODevice::ReadOnly) || preview.size() <= 0)
   return QStringLiteral("压缩预览已失效");
- QTemporaryDir result(QDir(directory).filePath("FormaBox-XXXXXX"));
+ QTemporaryDir result(QDir(directory).filePath("Omnora-XXXXXX"));
  if (!result.isValid())
   return QStringLiteral("无法创建任务目录");
  QSaveFile destination(result.filePath("workbench.pdf"));

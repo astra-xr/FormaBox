@@ -299,7 +299,11 @@ def run_folder_batch(ctx, inputs, params):
     if not re.fullmatch('[0-9a-f]{32}', session):
         raise ValueError('续跑任务编号无效')
     spec, arguments, _ = BATCH[str(options['operation'])]
-    directory = extended_path(checked_path(str(ctx.root/f'FormaBox-Batch-{session}'), allow_missing=True))
+    batch = ctx.root/f'Omnora-Batch-{session}'
+    previous = ctx.root/f'FormaBox-Batch-{session}'
+    if not batch.exists() and (previous/'任务配置.json').is_file():
+        batch = previous
+    directory = extended_path(checked_path(str(batch), allow_missing=True))
     directory.mkdir(exist_ok=True)
     with batch_lock(directory/'.lock'):
         marker = directory/'任务配置.json'

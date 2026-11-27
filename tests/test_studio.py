@@ -1,6 +1,8 @@
 """Regressions for previews, verified size limits and durable results."""
 from contextlib import closing
+from hashlib import sha256
 import json
+import os
 from pathlib import Path
 import tarfile
 import wave
@@ -14,6 +16,7 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 from formabox.core import Cancelled, Context, execute, find_executable
 from formabox.__main__ import engine_availability
+from formabox import studio_speech
 from formabox.studio_preview import preview_tool
 
 
@@ -119,7 +122,8 @@ def test_archive_preview_partial_extract_and_links(tmp_path):
         preview(tmp_path, 'file.archive', [malformed])
 
 
-def test_folder_resume_skips_completed_file(tmp_path):
+@pytest.mark.parametrize('legacy', [False, True])
+def test_folder_resume_skips_completed_file(tmp_path, legacy):
     source = tmp_path/'输入'
     source.mkdir()
     (source/'子文件夹').mkdir()
@@ -135,6 +139,11 @@ def test_folder_resume_skips_completed_file(tmp_path):
             cancel.touch()
     with pytest.raises(Cancelled):
         execute(request, stop)
+    batch_directory = tmp_path/'导出'/('Omnora-Batch-' + 'a'*32)
+    if legacy:
+        previous = batch_directory.with_name('FormaBox-Batch-' + 'a'*32)
+        batch_directory.rename(previous)
+        batch_directory = previous
     first, = list((tmp_path/'导出').rglob('*.jpg'))
     saved = first.stat().st_mtime_ns
     cancel.unlink()
@@ -143,6 +152,19 @@ def test_folder_resume_skips_completed_file(tmp_path):
     assert summary == {'completed': 1, 'resumed': 1, 'failures': []}
     assert first.stat().st_mtime_ns == saved
     assert len(list((results/'子文件夹').rglob('*.jpg'))) == 1
+    assert results.parent == batch_directory
+
+
+def test_rename_legacy_speech_model_is_reused(tmp_path, monkeypatch):
+    model = tmp_path/'FormaBox'/'models'/studio_speech.MODEL
+    model.parent.mkdir(parents=True)
+    data = b'previously downloaded model'
+    model.write_bytes(data)
+    monkeypatch.setenv('LOCALAPPDATA' if os.name == 'nt' else 'XDG_CACHE_HOME', str(tmp_path))
+    monkeypatch.delenv('FORMABOX_MODEL_DIR', raising=False)
+    monkeypatch.setattr(studio_speech, 'MODEL_SHA', sha256(data).hexdigest())
+    assert studio_speech.model_path(Context(tmp_path), allow_download=False) == model
+    assert not (tmp_path/'Omnora').exists()
 
 
 @pytest.mark.skipif(not engine_availability()['ffmpeg'], reason='FFmpeg dependency unavailable')

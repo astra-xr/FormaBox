@@ -17,3 +17,40 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg tesseract-ocr libreoffice-writer
       - run: python -m pip install -e './worker[test]'
       - run: python -m pytest -q -ra tests
+  desktop:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: win64_msvc2022_64
+          cache: true
+      - name: Build Omnora and verify the development launcher
+        shell: pwsh
+        run: |
+          python -m pip install -r packaging/windows/runtime-requirements.txt -e './worker'
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake -S . -B build/desktop -G 'Visual Studio 17 2022' -A x64
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --build build/desktop --config Release --parallel
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --install build/desktop --config Release --prefix build/desktop-check/dist
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Copy-Item -LiteralPath build/desktop/launcher/Release/Omnora.exe -Destination build/desktop-check/Omnora.exe
+          $env:FORMABOX_PYTHON = (Get-Command python).Source
+          $env:QT_QUICK_BACKEND = 'software'
+          $env:QT_FORCE_STDERR_LOGGING = '1'
+          $process = Start-Process -FilePath (Resolve-Path 'build/desktop-check/Omnora.exe') -ArgumentList '--verify-runtime' -WindowStyle Hidden -PassThru -Wait
+          exit $process.ExitCode
+      - uses: actions/upload-artifact@v4
+        with:
+          name: omnora-windows-executables
+          path: |
+            build/desktop-check/Omnora.exe
+            build/desktop-check/dist/Omnora.exe
+          if-no-files-found: error
+          retention-days: 3

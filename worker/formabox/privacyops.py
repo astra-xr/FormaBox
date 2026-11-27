@@ -20,7 +20,7 @@ def encrypt(ctx,inputs,p):
         out.append(dest)
     return out
 
-@tool('privacy.decrypt','隐私','文件解密 FormaBox',[param('password','密码','','password')])
+@tool('privacy.decrypt','隐私','文件解密 Omnora',[param('password','密码','','password')])
 def decrypt(ctx,inputs,p):
     pw=str(p['password']); out=[]; hlen=len(MAGIC)+28
     for i,f in enumerate(inputs):
@@ -28,7 +28,7 @@ def decrypt(ctx,inputs,p):
         if size<hlen+16: raise ValueError('文件格式无效')
         with f.open('rb') as a:
             header=a.read(hlen)
-            if not header.startswith(MAGIC): raise ValueError('不是 FormaBox 加密文件')
+            if not header.startswith(MAGIC): raise ValueError('不是万象加密文件')
             salt=header[len(MAGIC):len(MAGIC)+16]; nonce=header[-12:]; a.seek(-16,2); tag=a.read(16); a.seek(hlen)
             cipher=Cipher(algorithms.AES(key(pw,salt)),modes.GCM(nonce,tag)).decryptor(); cipher.authenticate_additional_data(header); dest=ctx.path(f'{i+1:04d}-{f.stem}'); remaining=size-hlen-16
             with tempfile.TemporaryFile(dir=ctx.root) as b:

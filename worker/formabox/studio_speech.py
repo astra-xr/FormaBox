@@ -12,14 +12,21 @@ from .studio_media import probe
 
 MODEL = 'ggml-tiny.bin'
 MODEL_SHA = 'be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21'
-MODEL_URL = 'https://github.com/astra-xr/FormaBox/releases/download/v0.9.0/Whisper-Multilingual-Tiny.bin'
+MODEL_URL = 'https://github.com/astra-xr/Omnora/releases/download/v0.9.0/Whisper-Multilingual-Tiny.bin'
 
 
 def model_path(ctx, allow_download):
     base = os.environ.get('LOCALAPPDATA') if os.name == 'nt' else os.environ.get('XDG_CACHE_HOME')
     base = Path(base) if base else Path.home()/'.cache'
-    directory = checked_path(os.environ.get('FORMABOX_MODEL_DIR', str(base/'FormaBox'/'models')), allow_missing=True)
+    configured = os.environ.get('FORMABOX_MODEL_DIR')
+    directory = checked_path(configured or str(base/'Omnora'/'models'), allow_missing=True)
     model = directory/MODEL
+    if not configured and not model.exists():
+        previous = base/'FormaBox'/'models'/MODEL
+        if previous.is_file():
+            previous = checked_path(str(previous))
+            if digest(previous, ctx=ctx) == MODEL_SHA:
+                return previous
     if model.exists():
         model = checked_path(str(model))
         if model.is_file() and digest(model, ctx=ctx) == MODEL_SHA:

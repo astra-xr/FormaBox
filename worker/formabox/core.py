@@ -278,7 +278,7 @@ def execute(req,progress=emit):
     cancel = Path(cancel_value).absolute() if cancel_value else None
     inputs=[checked_path(x) for x in req['inputs']]
     output=extended_path(checked_path(req.get('output'),allow_missing=True))
-    job=uuid.uuid4().hex[:12]; final=output/f'FormaBox-{job}'
+    job=uuid.uuid4().hex[:12]; final=output/f'Omnora-{job}'
     if any(p.is_dir() and display_path(output).is_relative_to(display_path(p)) for p in inputs): raise ValueError('输出目录不能位于输入文件夹内部')
     output.mkdir(parents=True,exist_ok=True)
     if req.get('tool') == 'folder.batch':

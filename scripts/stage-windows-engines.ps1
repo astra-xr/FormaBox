@@ -163,11 +163,11 @@ try {
 Save-Verified 'https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.8.3/samples/jfk.wav' (Join-Path $sourceRoot 'speech-test.wav') '59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e'
 
 @'
-FormaBox Windows bundled engines
+Omnora Windows bundled engines
 
 FFmpeg 8.1.2, BtbN win64 GPL static build, extracted without running Open Video Craft 1.0.3.
 FFmpeg is distributed under the GNU GPL version 3 or later. See ffmpeg/COPYING.GPLv3.
-Build configuration and corresponding source are published on the same FormaBox Release:
+Build configuration and corresponding source are published with each Omnora release:
 FFmpeg-Windows-Build-Sources.tar.gz and FFmpeg-Windows-Dependency-Sources.tar.
 
 Tesseract is built from vcpkg for x64-windows-static, under Apache-2.0.
@@ -187,6 +187,6 @@ The optional multilingual tiny model is hosted on the same release under MIT.
 Model source: https://huggingface.co/ggerganov/whisper.cpp
 Model upstream license: https://github.com/openai/whisper/blob/main/LICENSE
 
-FormaBox releases and source attachments: https://github.com/astra-xr/FormaBox/releases
+Omnora releases and source attachments: https://github.com/astra-xr/Omnora/releases
 '@ | Set-Content -LiteralPath (Join-Path $engineRoot 'NOTICES.txt') -Encoding utf8
 exit 0

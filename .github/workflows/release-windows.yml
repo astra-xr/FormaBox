@@ -2,7 +2,7 @@ name: Windows installer release
 on:
   push:
     branches: [main]
-    paths: [packaging/windows/release-notes.md, .github/workflows/release-windows.yml]
+    paths: [packaging/windows/release-notes.md]
   workflow_dispatch:
 
 permissions:
@@ -82,7 +82,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $setup = Get-ChildItem build/installers -Filter '*-Full-Setup.exe' -File
-          if ($setup.Name -notmatch '^FormaBox-(\d+\.\d+\.\d+)-Windows-x64-Full-Setup\.exe$') {
+          if ($setup.Name -notmatch '^Omnora-(\d+\.\d+\.\d+)-Windows-x64-Full-Setup\.exe$') {
               throw 'Unexpected installer filename'
           }
           $version = $Matches[1]
@@ -95,6 +95,6 @@ jobs:
             'Tesseract-Windows-Build-Sources.tar.gz',
             'Whisper-Multilingual-Tiny.bin'
           ) | ForEach-Object { (Resolve-Path -LiteralPath (Join-Path 'build/engine-sources' $_)).Path }
-          gh release create $tag $setup.FullName "$($setup.FullName).sha256" @sources --target $env:GITHUB_SHA --title "万象 $version · Windows 完整预览版" --notes-file packaging/windows/release-notes.md --prerelease --draft
+          gh release create $tag $setup.FullName "$($setup.FullName).sha256" @sources --target $env:GITHUB_SHA --title "万象 Omnora $version · Windows 完整预览版" --notes-file packaging/windows/release-notes.md --prerelease --draft
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           gh release edit $tag --draft=false

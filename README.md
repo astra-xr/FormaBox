@@ -1,4 +1,4 @@
-# 万象（FormaBox）
+# 万象（Omnora）
 
 万象是一个免费、开源的 Windows 文件工具箱。可以在一个界面里做图片转换与压缩、PDF 合并与拆分、文本整理、批量文件处理，也可以把操作串成工作流。文件在本机处理，无需注册账号。
 
@@ -6,9 +6,9 @@
 
 ## 下载安装
 
-1. 在 [GitHub Release](https://github.com/astra-xr/FormaBox/releases/tag/v0.9.0) 下载 [Windows x64 完整安装包](https://github.com/astra-xr/FormaBox/releases/download/v0.9.0/FormaBox-0.9.0-Windows-x64-Full-Setup.exe)。
-2. 双击安装包，按中文向导选择目录并安装。默认安装到 `%LOCALAPPDATA%\Programs\FormaBox`。升级时需先卸载旧版。
-3. 安装完成后，从桌面或开始菜单打开「万象」，也可以直接运行安装目录中的 `FormaBox.exe`。卸载入口在 Windows「设置 → 应用」。
+1. 在 [GitHub Release](https://github.com/astra-xr/Omnora/releases/tag/v0.9.0) 下载 [Windows x64 完整安装包](https://github.com/astra-xr/Omnora/releases/download/v0.9.0/FormaBox-0.9.0-Windows-x64-Full-Setup.exe)。0.9.0 安装包发布于改名前，下载文件仍使用原名。
+2. 双击安装包，按中文向导选择目录并安装。升级时需先卸载旧版。
+3. 安装完成后，从桌面或开始菜单打开「万象」。卸载入口在 Windows「设置 → 应用」。
 
 **完整包内置 Qt、Python、FFmpeg 8.1.2、Tesseract 5.5.4（英文和简体中文语言包）、LibreOffice 26.8.3.1 和 whisper.cpp。** 装一次万象即可使用音视频转换、图片和扫描 PDF OCR、Word / Excel / PPT 转 PDF，无需单独安装或手动配置引擎。
 
@@ -27,7 +27,7 @@ Windows 顶栏把万象标题、工具入口和窗口按钮放在一起。右上
 - **音视频与字幕**。可按文件大小压缩视频、预览切点后剪切拼接或生成带时间戳的缩略图总览。音频可试听静音段后删除或缩短，也能在本机转写成 TXT 或 SRT。语音转写首次需勾选下载约 75 MiB 的模型，之后可离线使用。
 - **批量文件**。按后缀筛选一个文件夹，预览后转换，可保留子目录并在重新打开后继续未完任务。7z、TAR、TAR.GZ、GZ 和 ZIP 可浏览并选择成员提取。资源管理器右键的「发送到」还可以直接把 Office 文档转 PDF 或把一批图片压到 100 KiB。
 
-[路线图](ROADMAP.md) · [测试记录](docs/TESTING.md) · [安全边界](docs/SECURITY.md) · [全部发布版本](https://github.com/astra-xr/FormaBox/releases)
+[路线图](ROADMAP.md) · [测试记录](docs/TESTING.md) · [安全边界](docs/SECURITY.md) · [全部发布版本](https://github.com/astra-xr/Omnora/releases)
 
 ## 项目结构
 
@@ -53,12 +53,12 @@ CMakeLists.txt           Qt 桌面构建
 .\scripts\build-windows.ps1 -TestOnly
 # 测试、编译、安装开发构建（按实际 Qt 路径修改）
 .\scripts\build-windows.ps1 -QtPrefix 'C:\Qt\6.8.3\msvc2022_64'
-.\FormaBox.exe
+.\Omnora.exe
 ```
 
 FFmpeg、Tesseract（含所需语言包，例如 eng / chi_sim）可通过 PATH 检测。万象会自动查找 Windows 默认安装位置的 LibreOffice。自定义目录可通过 `FORMABOX_SOFFICE` 指定 `soffice.com` 或 `soffice.exe` 的绝对路径，配置后重开万象。开发版可把 ffmpeg 等可执行文件放在 `dist/engines`，同时准备其运行时依赖。构建脚本支持 `-Python` 指定创建虚拟环境的 Python，`-Wheelhouse` 使用本地 wheel，`-WithHeic` 启用可选 HEIC 扩展。
 
-Qt 桌面程序优先使用 `FORMABOX_PYTHON` 指定的 Python，也可查找 `python/python.exe`、与 `dist` 同级的 `.venv` 和系统 Python。构建脚本会在当前 PowerShell 环境设置 Python 和工作进程路径。
+Qt 桌面程序优先使用 `FORMABOX_PYTHON` 指定的 Python，也可查找 `python/python.exe`、与 `dist` 同级的 `.venv` 和系统 Python。构建脚本会在当前 PowerShell 环境设置 Python 和工作进程路径。Python 模块和环境变量沿用原名，已有脚本可继续使用。
 
 ## 仅运行后端（已验证）
 
@@ -77,7 +77,7 @@ python tests/smoke_tools.py
 {
   "tool": "image.compress",
   "inputs": ["C:/Pictures/demo.png"],
-  "output": "C:/Users/Me/Documents/FormaBox Output",
+  "output": "C:/Users/Me/Documents/Omnora Output",
   "params": {"format": "jpg", "quality": "85", "target_kib": "100"}
 }
 ```

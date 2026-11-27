@@ -1,10 +1,10 @@
-FormaBox / 万象 — Windows installer
+Omnora / 万象 — Windows installer
 
-The FormaBox application is covered by the MIT license in this directory.
+The Omnora application is covered by the MIT license in this directory.
 
 Qt 6.8.3 — LGPL-3.0. FormaBox dynamically loads the Qt libraries supplied in
 the application directory. These files can be replaced with ABI-compatible
-builds. The FormaBox distribution terms permit modification for your own use
+builds. The Omnora distribution terms permit modification for your own use
 and reverse engineering for debugging those modifications. The GNU GPL and
 GNU LGPL texts and Qt's module notices and SPDX documents are supplied here.
 Corresponding Qt 6.8.3 source from the Qt Project:

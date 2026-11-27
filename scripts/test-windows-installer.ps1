@@ -13,18 +13,19 @@ function Invoke-CheckedProcess([string]$File, [string]$Arguments) {
     if ($process.ExitCode) { throw "$File exited with code $($process.ExitCode)" }
 }
 
-$testRoot = (New-Item -ItemType Directory -Path (Join-Path $env:TEMP "FormaBox-$([guid]::NewGuid())")).FullName
+$testRoot = (New-Item -ItemType Directory -Path (Join-Path $env:TEMP "Omnora-$([guid]::NewGuid())")).FullName
 $target = Join-Path $testRoot '万象 安装'
 $uninstaller = Join-Path $target 'Uninstall.exe'
-$shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) '万象.lnk'
-$desktopShortcut = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) '万象.lnk'
-$sendToShortcut = Join-Path ([Environment]::GetFolderPath('SendTo')) '万象（FormaBox）.lnk'
+$shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) '万象（Omnora）.lnk'
+$desktopShortcut = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) '万象（Omnora）.lnk'
+$sendToShortcut = Join-Path ([Environment]::GetFolderPath('SendTo')) '万象（Omnora）.lnk'
 $quickOffice = Join-Path ([Environment]::GetFolderPath('SendTo')) '万象 - Office 转 PDF.lnk'
 $quickPhoto = Join-Path ([Environment]::GetFolderPath('SendTo')) '万象 - 图片压缩到 100 KiB.lnk'
 
 try {
     Invoke-CheckedProcess $setupPath "/S /D=$target"
-    if (!(Test-Path -LiteralPath $uninstaller) -or !(Test-Path -LiteralPath $shortcut) -or
+    if (!(Test-Path -LiteralPath (Join-Path $target 'Omnora.exe')) -or
+        !(Test-Path -LiteralPath $uninstaller) -or !(Test-Path -LiteralPath $shortcut) -or
         !(Test-Path -LiteralPath $desktopShortcut) -or !(Test-Path -LiteralPath $sendToShortcut) -or
         !(Test-Path -LiteralPath $quickOffice) -or !(Test-Path -LiteralPath $quickPhoto) -or
         (Get-ItemProperty -LiteralPath $registry).InstallLocation -ne $target) {
@@ -73,7 +74,7 @@ try {
     }
     if ($sendProcess.ExitCode) {
         $log = Join-Path $testRoot 'desktop-diagnostics.txt'
-        $application = Join-Path $target 'FormaBox.exe'
+        $application = Join-Path $target 'Omnora.exe'
         $diagnostic = Start-Process -FilePath $application -ArgumentList "--send-to $sendArguments" -WindowStyle Hidden -PassThru -RedirectStandardError $log
         if (!$diagnostic.WaitForExit(55000)) { $diagnostic.Kill() }
         if (Test-Path -LiteralPath $log) {
@@ -110,7 +111,7 @@ try {
     $userFile = Join-Path $target 'python/keep.txt'
     Set-Content -LiteralPath $userFile -Value 'User-created file'
     Invoke-CheckedProcess $uninstaller "/S _?=$target"
-    if ((Test-Path -LiteralPath (Join-Path $target 'FormaBox.exe')) -or
+    if ((Test-Path -LiteralPath (Join-Path $target 'Omnora.exe')) -or
         (Test-Path -LiteralPath $registry) -or (Test-Path -LiteralPath $shortcut) -or
         (Test-Path -LiteralPath $desktopShortcut) -or (Test-Path -LiteralPath $sendToShortcut) -or
         (Test-Path -LiteralPath $quickOffice) -or (Test-Path -LiteralPath $quickPhoto) -or

@@ -49,8 +49,8 @@ try {
     Invoke-Checked { cmake @CmakeArgs }
     Invoke-Checked { cmake --build build --config $Configuration --parallel }
     Invoke-Checked { cmake --install build --config $Configuration --prefix "$Root/dist" }
-    Copy-Item -LiteralPath "$Root/build/launcher/$Configuration/FormaBox.exe" -Destination "$Root/FormaBox.exe" -Force
-    Write-Host "Launch the development build with $Root/FormaBox.exe."
+    Copy-Item -LiteralPath "$Root/build/launcher/$Configuration/Omnora.exe" -Destination "$Root/Omnora.exe" -Force
+    Write-Host "Launch the development build with $Root/Omnora.exe."
 } finally {
     Pop-Location
 }

@@ -447,6 +447,8 @@ static bool verifyStudio(QQmlApplicationEngine &engine, QObject *root, Controlle
 
 static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controller &controller)
 {
+    if (root->property("title").toString() != QStringLiteral("万象 · Omnora"))
+        return false;
     const auto tools = controller.tools();
     const auto findTool = [&](const QString &id) {
         for (const auto &tool : tools) {
@@ -511,10 +513,11 @@ static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controll
 int main(int argc, char **argv)
 {
     QGuiApplication app(argc, argv);
+    // Keep the existing QSettings keys for presets, history and resumable jobs.
     app.setOrganizationName("FormaBox");
     app.setApplicationName("FormaBox");
-    app.setApplicationDisplayName(QStringLiteral("万象"));
-    app.setApplicationVersion(QStringLiteral(FORMABOX_VERSION));
+    app.setApplicationDisplayName(QStringLiteral("万象 · Omnora"));
+    app.setApplicationVersion(QStringLiteral(OMNORA_VERSION));
     app.setWindowIcon(QIcon(QStringLiteral(":/branding/formabox.png")));
     QQuickStyle::setStyle("Fusion");
 
@@ -554,7 +557,7 @@ int main(int argc, char **argv)
 #endif
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed,
                      &app, [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
-    engine.loadFromModule("FormaBox", "Main");
+    engine.loadFromModule("Omnora", "Main");
     if (!engine.rootObjects().isEmpty()) {
         auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst());
 #ifdef Q_OS_WIN

@@ -257,7 +257,7 @@
       {
         "key": "text",
         "label": "水印文字",
-        "default": "FormaBox",
+        "default": "Omnora",
         "kind": "text",
         "choices": []
       },
@@ -579,7 +579,7 @@
       {
         "key": "text",
         "label": "水印文字",
-        "default": "FormaBox",
+        "default": "Omnora",
         "kind": "text",
         "choices": []
       },
@@ -1481,7 +1481,7 @@
   {
     "id": "privacy.decrypt",
     "category": "隐私",
-    "label": "文件解密 FormaBox",
+    "label": "文件解密 Omnora",
     "params": [
       {
         "key": "password",

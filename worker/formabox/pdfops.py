@@ -189,7 +189,7 @@ def add_page_numbers(ctx, inputs, params):
 
 
 @tool('pdf.watermark', 'PDF', 'PDF 文字水印',
-      [param('text', '水印文字', 'FormaBox'), _PAGE_RANGE,
+      [param('text', '水印文字', 'Omnora'), _PAGE_RANGE,
        param('position', '位置', '页面居中', 'choice', ['页面居中', *_NUMBER_POSITIONS]),
        param('size', '字号（pt）', '36', 'number'), param('opacity', '不透明度（%）', '30', 'number')],
       maximum=32, engines=['pypdf', 'Pillow'],
