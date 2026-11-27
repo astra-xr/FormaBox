@@ -113,7 +113,7 @@ Dialog {
                         }
                     }
                 }
-                Button {
+                GlowButton {
                     text: "打开"
                     enabled: entry.modelData.canOpen
                     onClicked: dialog.openItem(entry.modelData.path)
@@ -124,10 +124,10 @@ Dialog {
         Label { Layout.fillWidth: true; text: dialog.notice; visible: text.length > 0; wrapMode: Text.Wrap }
         RowLayout {
             Layout.fillWidth: true
-            Button { text: "打开输出目录"; onClicked: dialog.controller.openFolder(dialog.directory) }
+            GlowButton { text: "打开输出目录"; onClicked: dialog.controller.openFolder(dialog.directory) }
             Item { Layout.fillWidth: true }
-            Button { text: "关闭"; onClicked: dialog.close() }
-            Button {
+            GlowButton { text: "关闭"; onClicked: dialog.close() }
+            GlowButton {
                 text: "用作当前输入" + (dialog.selected.length ? " (" + dialog.selected.length + ")" : "")
                 highlighted: true
                 enabled: dialog.selected.length > 0

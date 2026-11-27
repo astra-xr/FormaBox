@@ -7,11 +7,15 @@
 #include <QIcon>
 #include <QImage>
 #include <QJSValue>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPdfWriter>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQuickItem>
 #include <QQuickStyle>
+#include <QQuickWindow>
+#include <QSet>
 #include <QSettings>
 #include <QTimer>
 #include <functional>
@@ -330,6 +334,67 @@ static bool verifyEngineControls(QQmlApplicationEngine &engine, QObject *root, C
     return true;
 }
 
+static bool verifyToolNavigation(QJSValue window, QObject *root, const QVariantList &tools)
+{
+    const auto showCategory = [&](const QString &category) {
+        return invokeQml(window, "showCategory", {QJSValue(category)});
+    };
+    const auto visibleIds = [&] {
+        QStringList ids;
+        for (const auto &tool : window.property("visibleTools").toVariant().toList())
+            ids.append(tool.toMap().value("id").toString());
+        return ids;
+    };
+    auto *search = root->findChild<QObject *>("toolSearch");
+    const auto *workflowToggle = root->findChild<QObject *>("workflowToggle");
+    const auto featured = visibleIds();
+    if (!search || !workflowToggle || window.property("category").toString() != QStringLiteral("常用") ||
+        window.property("workflowExpanded").toBool() || window.property("taskCenterExpanded").toBool() ||
+        featured.size() != 12 || featured.first() != "doc.pdf" ||
+        QSet<QString>(featured.cbegin(), featured.cend()).size() != featured.size())
+        return false;
+
+    if (!showCategory(QStringLiteral("文档与数据")) || !visibleIds().contains("data.json") ||
+        !showCategory(QStringLiteral("文件与隐私")) || !visibleIds().contains("file.rename") ||
+        !visibleIds().contains("privacy.encrypt") || !showCategory(QStringLiteral("音频")) ||
+        !visibleIds().contains("audio.convert") || visibleIds().contains("pdf.ocr"))
+        return false;
+
+    search->setProperty("text", " PDF.OCR ");
+    if (visibleIds() != QStringList{"pdf.ocr"} || !showCategory(QStringLiteral("全部工具")) ||
+        !search->property("text").toString().isEmpty() || visibleIds().size() != tools.size())
+        return false;
+
+    const auto theme = window.property("themeMode");
+    window.setProperty("themeMode", "dark");
+    const bool darkButton = workflowToggle->property("dark").toBool();
+    window.setProperty("themeMode", "light");
+    const bool lightButton = !workflowToggle->property("dark").toBool();
+    window.setProperty("themeMode", theme);
+    return darkButton && lightButton && showCategory(QStringLiteral("常用")) && visibleIds() == featured;
+}
+
+static bool verifyButtonReflection(QObject *root)
+{
+    const auto *button = root->findChild<QQuickItem *>("workflowToggle");
+    const auto *reflection = button ? button->findChild<QQuickItem *>("buttonReflection") : nullptr;
+    if (!reflection || !button->window() || button->width() < 40)
+        return false;
+
+    const auto moveOverButton = [button](qreal fraction) {
+        auto *window = button->window();
+        const auto local = button->mapToScene({button->width() * fraction, button->height() / 2});
+        QMouseEvent move(QEvent::MouseMove, local, window->mapToGlobal(local),
+                         Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(window, &move);
+    };
+    moveOverButton(0.2);
+    const auto left = reflection->property("position").toPointF();
+    moveOverButton(0.8);
+    const auto right = reflection->property("position").toPointF();
+    return button->property("lit").toBool() && right.x() - left.x() > button->width() / 2;
+}
+
 static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controller &controller)
 {
     const auto tools = controller.tools();
@@ -351,6 +416,14 @@ static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controll
     }
 
     auto window = engine.newQObject(root);
+    if (!verifyToolNavigation(window, root, tools)) {
+        qWarning("Tool navigation, search, or button theme verification failed.");
+        return false;
+    }
+    if (!verifyButtonReflection(root)) {
+        qWarning("The button reflection did not follow the pointer.");
+        return false;
+    }
     const auto call = [&](const char *method, const QJSValueList &arguments = {}) {
         return invokeQml(window, method, arguments);
     };
@@ -363,7 +436,7 @@ static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controll
 
     window.setProperty("inputs", engine.toScriptValue(QVariantList{QStringLiteral("one.txt")}));
     if (!call("chooseTool", {engine.toScriptValue(compare)}) || !call("addStep") ||
-        window.property("workflowReady").toBool())
+        window.property("workflowReady").toBool() || !window.property("workflowExpanded").toBool())
         return false;
 
     window.setProperty("inputs", engine.toScriptValue(
@@ -371,7 +444,7 @@ static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controll
     const bool ready = window.property("workflowReady").toBool() &&
                        verifyWorkbench(engine, root, controller) && verifySubtitles(engine, root, controller);
     if (ready)
-        qInfo("Desktop checks passed: PDF export and edits, task results, rename preview, multi-step presets, and subtitles.");
+        qInfo("Desktop checks passed: featured tools, grouped navigation, global search, button themes, PDF editing, task results, rename preview, workflows, and subtitles.");
     return ready;
 }
 

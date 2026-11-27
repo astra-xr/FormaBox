@@ -109,8 +109,8 @@ Dialog {
         RowLayout {
             Layout.fillWidth: true
             Item { Layout.fillWidth: true }
-            Button { text: "返回修改"; onClicked: dialog.close() }
-            Button { text: "复制并重命名"; highlighted: true; enabled: dialog.applicable; onClicked: dialog.submitPreview() }
+            GlowButton { text: "返回修改"; onClicked: dialog.close() }
+            GlowButton { text: "复制并重命名"; highlighted: true; enabled: dialog.applicable; onClicked: dialog.submitPreview() }
         }
     }
 }

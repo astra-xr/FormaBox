@@ -2,7 +2,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
-import QtQuick.Shapes
 
 ApplicationWindow {
     id: root
@@ -10,19 +9,31 @@ ApplicationWindow {
     visible: true; title: "万象"
     property string themeMode: "system"
     readonly property bool dark: themeMode === "system" ? backend.systemDark : themeMode === "dark"
-    readonly property color panel: dark ? "#243149" : "#f7faff"
-    readonly property color canvas: dark ? "#111a2b" : "#edf1fb"
-    readonly property color ink: dark ? "#f0f5ff" : "#1b2943"
-    readonly property color muted: dark ? "#b0bdd4" : "#505f79"
-    readonly property color accent: dark ? "#aac1ff" : "#4759bb"
-    readonly property color rim: dark ? "#5d8da6d5" : "#66859ccb"
-    readonly property color buttonTop: dark ? "#dd586e91" : "#f8fbffff"
-    readonly property color buttonMiddle: dark ? "#d536486a" : "#e6edf4ff"
-    readonly property color buttonBottom: dark ? "#d522304a" : "#c8c9d8f9"
-    readonly property color buttonLitTop: dark ? "#627eb0" : "#ffffff"
-    readonly property color buttonLitMiddle: dark ? "#465e88" : "#e8f3ff"
-    readonly property color buttonLitBottom: dark ? "#2d4268" : "#c2d3fa"
-    property string category: "全部"
+    readonly property color panel: dark ? "#23303d" : "#fcfdff"
+    readonly property color canvas: dark ? "#17212b" : "#e9eef4"
+    readonly property color ink: dark ? "#edf4fc" : "#1b2b3d"
+    readonly property color muted: dark ? "#b2c2d4" : "#4d6075"
+    readonly property color accent: dark ? "#90d2c1" : "#2c7266"
+    readonly property color rim: dark ? "#3a4d60" : "#c8d4e0"
+    property string category: "常用"
+    property bool workflowExpanded: false
+    property bool taskCenterExpanded: false
+    readonly property string searchQuery: search.text.trim().toLowerCase()
+    readonly property var visibleTools: filterTools(category, searchQuery)
+    readonly property var toolSections: [
+        {title: "常用"},
+        {title: "图片", categories: ["图片"]},
+        {title: "PDF", categories: ["PDF"]},
+        {title: "视频", categories: ["视频"]},
+        {title: "音频", categories: ["音频"]},
+        {title: "文档与数据", categories: ["文档"]},
+        {title: "文件与隐私", categories: ["文件", "隐私"]},
+        {title: "全部工具"}
+    ]
+    readonly property var featuredTools: [
+        "doc.pdf", "pdf.merge", "pdf.split", "pdf.compress_target", "pdf.ocr", "image.compress",
+        "image.convert", "image.ocr", "video.convert", "video.frames", "audio.convert", "file.rename"
+    ]
     property var selected: null
     property var inputs: Array.from(launchFiles)
     property var params: ({})
@@ -69,173 +80,48 @@ ApplicationWindow {
     }, [])
     readonly property bool workflowReady: workflowTools.length > 0 && workflowTools.every(tool => !!tool)
                                           && workflowMissing.length === 0 && countFits(workflowTools[0])
-    property var categories: ["全部","图片","PDF","视频","音频","文档","文件","隐私"]
     color: canvas
-    palette.window: canvas; palette.base: panel; palette.text: ink; palette.windowText: ink; palette.buttonText: ink; palette.button: panel; palette.highlight: accent
-    palette.placeholderText: muted; palette.highlightedText: dark ? "#17233a" : "#ffffff"
+    font.pixelSize: 14
+    palette.window: canvas
+    palette.base: panel
+    palette.text: ink
+    palette.windowText: ink
+    palette.buttonText: ink
+    palette.button: panel
+    palette.highlight: accent
+    palette.placeholderText: muted
+    palette.highlightedText: dark ? "#17212b" : "#ffffff"
     background: Rectangle {
-        color: root.canvas
-        Halo {
-            anchors.fill: parent
-            xRatio: 0.15; yRatio: 0.05
-            tint: root.dark ? "#52648ff4" : "#70a4c3ff"
-        }
-        Halo {
-            anchors.fill: parent
-            xRatio: 0.92; yRatio: 0.72
-            tint: root.dark ? "#41565ad0" : "#65c5b3f5"
-        }
-    }
-
-    component Halo: Shape {
-        id: glow
-        property real xRatio: 0.5
-        property real yRatio: 0.5
-        property color tint: "transparent"
-        ShapePath {
-            strokeWidth: -1
-            startX: 0; startY: 0
-            fillGradient: RadialGradient {
-                centerX: glow.width * glow.xRatio
-                centerY: glow.height * glow.yRatio
-                centerRadius: Math.max(glow.width, glow.height) * 0.7
-                focalX: centerX; focalY: centerY
-                GradientStop { position: 0; color: glow.tint }
-                GradientStop { position: 1; color: Qt.rgba(glow.tint.r, glow.tint.g, glow.tint.b, 0) }
-            }
-            PathLine { x: glow.width; y: 0 }
-            PathLine { x: glow.width; y: glow.height }
-            PathLine { x: 0; y: glow.height }
-            PathLine { x: 0; y: 0 }
-        }
-    }
-
-    component GlassSurface: Rectangle {
-        property bool accentBorder: false
-        radius: 16
-        border.color: accentBorder ? root.accent : root.rim
         gradient: Gradient {
-            GradientStop { position: 0; color: root.dark ? "#d82a3852" : "#eaffffff" }
-            GradientStop { position: 1; color: root.dark ? "#d7182336" : "#b8eff4ff" }
-        }
-        Rectangle {
-            height: 1
-            anchors { left: parent.left; right: parent.right; top: parent.top; leftMargin: 18; rightMargin: 18; topMargin: 1 }
-            gradient: Gradient {
-                orientation: Gradient.Horizontal
-                GradientStop { position: 0; color: "transparent" }
-                GradientStop { position: 0.42; color: root.dark ? "#55b9d1ff" : "#ffffff" }
-                GradientStop { position: 1; color: "transparent" }
-            }
+            GradientStop { position: 0; color: root.dark ? "#202e3b" : "#f3f7fb" }
+            GradientStop { position: 1; color: root.canvas }
         }
     }
 
-    component GlassButton: Button {
-        id: control
-        property bool selected: false
-        property bool primary: false
-        property bool centered: true
-        property bool compact: false
-        readonly property bool lit: enabled && (selected || hovered || visualFocus)
-        readonly property bool filled: enabled && primary
-        implicitWidth: Math.max(compact ? 30 : 56, implicitContentWidth + leftPadding + rightPadding)
-        implicitHeight: Math.max(compact ? 28 : 37, implicitContentHeight + topPadding + bottomPadding)
-        horizontalPadding: compact ? 7 : 10
-        verticalPadding: compact ? 2 : 5
-        hoverEnabled: true
-        font.weight: selected || primary ? Font.DemiBold : Font.Normal
-        HoverHandler {
-            id: pointer
-            enabled: control.enabled
-            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-            onPointChanged: {
-                if (hovered)
-                    reflection.position = point.position
-            }
-            onHoveredChanged: {
-                if (hovered)
-                    reflection.position = point.position
-            }
-        }
-        contentItem: Label {
-            text: control.text
-            font: control.font
-            color: control.filled ? "#ffffff" : root.ink
-            opacity: control.enabled ? 1 : 0.58
-            wrapMode: Text.Wrap
-            verticalAlignment: Text.AlignVCenter
-            horizontalAlignment: control.centered ? Text.AlignHCenter : Text.AlignLeft
-        }
-        background: Item {
-            Rectangle {
-                anchors.fill: parent
-                anchors.margins: -2
-                radius: 12
-                color: "transparent"
-                border.width: 2
-                border.color: root.dark ? "#5685b7ff" : "#45667cff"
-                opacity: control.lit ? (control.down ? 0.5 : 1) : 0
-                Behavior on opacity { NumberAnimation { duration: 140 } }
-            }
-            Rectangle {
-                anchors.fill: parent
-                radius: 10
-                border.color: control.visualFocus ? root.accent
-                              : control.filled ? "#8b9cff"
-                              : control.lit ? root.accent : root.rim
-                gradient: Gradient {
-                    GradientStop {
-                        position: 0
-                        color: control.filled ? (control.down ? "#4858c2" : "#7c93f2")
-                              : control.lit ? root.buttonLitTop : root.buttonTop
-                    }
-                    GradientStop {
-                        position: 0.46
-                        color: control.filled ? (control.down ? "#3544ac" : "#4a5fd9")
-                              : control.lit ? root.buttonLitMiddle : root.buttonMiddle
-                    }
-                    GradientStop {
-                        position: 1
-                        color: control.filled ? "#313ea7"
-                              : control.lit ? root.buttonLitBottom : root.buttonBottom
-                    }
-                }
-            }
-            Item {
-                id: reflection
-                objectName: "buttonReflection"
-                property point position: Qt.point(0, 0)
-                anchors.fill: parent
-                anchors.margins: 3
-                clip: true
-                visible: opacity > 0
-                opacity: pointer.hovered ? (control.down ? 0.55 : 1) : 0
-                Behavior on opacity { NumberAnimation { duration: 160; easing.type: Easing.OutQuad } }
-                Image {
-                    readonly property real radius: Math.max(24, Math.min(reflection.width * 0.6, reflection.height * 1.7))
-                    width: radius * 2
-                    height: width
-                    x: reflection.position.x - 3 - radius
-                    y: reflection.position.y - 3 - radius
-                    source: "qrc:/branding/button-light.png"
-                    smooth: true
-                }
-            }
-            Rectangle {
-                anchors { left: parent.left; right: parent.right; top: parent.top; leftMargin: 9; rightMargin: 9; topMargin: 2 }
-                height: 2
-                radius: 1
-                opacity: control.enabled ? (control.down ? 0.48 : 1) : 0.35
-                gradient: Gradient {
-                    orientation: Gradient.Horizontal
-                    GradientStop { position: 0; color: "transparent" }
-                    GradientStop { position: 0.31; color: control.filled || root.dark ? "#d3f1ffff" : "#ffffff" }
-                    GradientStop { position: 0.69; color: control.lit ? "#e4c2efff" : "#8acfddff" }
-                    GradientStop { position: 1; color: "transparent" }
-                }
-            }
-        }
+    component Panel: Rectangle {
+        property bool accentBorder: false
+        radius: 13
+        color: root.panel
+        border.color: accentBorder ? root.accent : root.rim
     }
+
+    function filterTools(sectionName, query) {
+        const tools = Array.from(backend.tools)
+        if (query)
+            return tools.filter(tool => (tool.label + " " + tool.id + " " + tool.category).toLowerCase().includes(query))
+        if (sectionName === "常用")
+            return featuredTools.map(id => tools.find(tool => tool.id === id)).filter(tool => !!tool)
+        if (sectionName === "全部工具")
+            return tools
+        const section = toolSections.find(item => item.title === sectionName)
+        return section ? tools.filter(tool => section.categories.includes(tool.category)) : []
+    }
+
+    function showCategory(name) {
+        category = name
+        search.clear()
+    }
+
     function countFits(tool) {
         return !!tool && inputs.length >= tool.minimum && (!tool.maximum || inputs.length <= tool.maximum)
     }
@@ -322,8 +208,8 @@ ApplicationWindow {
             return
         }
         if (tool.id !== "pdf.compose") {
-            category = tool.category
-            search.text = ""
+            const section = toolSections.find(item => item.categories && item.categories.includes(tool.category))
+            showCategory(section ? section.title : "全部工具")
         }
         chooseTool(tool)
     }
@@ -410,6 +296,7 @@ ApplicationWindow {
     function addStep() {
         if (!canAddStep) return
         steps = steps.concat([{tool: selected.id, params: Object.assign({}, params)}])
+        workflowExpanded = true
         workflowNotice = "已添加工作流步骤"
     }
     function loadWorkflow(text) {
@@ -426,6 +313,7 @@ ApplicationWindow {
                     throw Error("工作流包含无效参数")
             }
             steps = value.map(step => ({tool: step.tool, params: step.params || {}}))
+            workflowExpanded = true
             workflowNotice = "已载入工作流"
         } catch (error) {
             workflowNotice = String(error)
@@ -434,6 +322,7 @@ ApplicationWindow {
     Connections {
         target: backend
         function onStatusChanged() { root.workflowNotice = "" }
+        function onBusyChanged() { if (backend.busy) root.taskCenterExpanded = true }
         function onToolsChanged() {
             if (root.selected) root.selected = backend.tools.find(t => t.id === root.selected.id) || null
         }
@@ -494,7 +383,10 @@ ApplicationWindow {
         width: Math.min(parent.width - 36, 650)
         height: Math.min(parent.height - 36, 465)
         modal: true
-        standardButtons: Dialog.Close
+        footer: RowLayout {
+            Item { Layout.fillWidth: true }
+            GlowButton { text: "关闭"; Layout.margins: 8; onClicked: presetManager.close() }
+        }
         property string notice: ""
         onOpened: {
             notice = ""
@@ -513,14 +405,14 @@ ApplicationWindow {
                     readonly property var tools: root.presetTools(modelData)
                     width: ListView.view.width
                     Label { text: modelData.name + (modelData.steps ? " · " + modelData.steps.length + " 步" : ""); textFormat: Text.PlainText; Layout.fillWidth: true; elide: Text.ElideRight }
-                    Button {
+                    GlowButton {
                         text: !root.presetMissing(tools).length ? "运行" :
                               backend.hasBundledEngines ? "引擎不可用" : "配置引擎"
                         enabled: root.presetFits(modelData, tools, root.inputs,
                                                 Array.from(backend.inputSuffixes(root.inputs))) && output.text.trim() !== ""
                         onClicked: root.runPreset(modelData)
                     }
-                    Button {
+                    GlowButton {
                         text: "移除"
                         visible: !modelData.builtIn
                         onClicked: presetManager.notice = backend.removePreset(modelData.name)
@@ -537,7 +429,7 @@ ApplicationWindow {
                     placeholderText: "预设名称"
                     maximumLength: 40
                 }
-                Button {
+                GlowButton {
                     text: "保存当前参数"
                     enabled: root.canSavePreset && presetName.text.trim() !== ""
                     onClicked: {
@@ -547,7 +439,7 @@ ApplicationWindow {
                             presetName.clear()
                     }
                 }
-                Button {
+                GlowButton {
                     text: "保存当前工作流"
                     enabled: root.steps.length > 0 && presetName.text.trim() !== ""
                     onClicked: {
@@ -564,11 +456,11 @@ ApplicationWindow {
 
     onClosing: function(close){if(backend.busy || backend.inspecting){close.accepted=false;root.workflowNotice="请先取消或等待当前任务结束再关闭"}}
     header: Item {
-        height: 75
-        GlassSurface { anchors.fill: parent; anchors.margins: 14; anchors.bottomMargin: 0 }
-        RowLayout { anchors.fill: parent; anchors.leftMargin: 28; anchors.rightMargin: 28; anchors.topMargin: 14; spacing: 12
+        height: 70
+        Panel { anchors.fill: parent; anchors.margins: 14; anchors.bottomMargin: 0 }
+        RowLayout { anchors.fill: parent; anchors.leftMargin: 28; anchors.rightMargin: 28; anchors.topMargin: 14; spacing: 10
             Image {
-                Layout.preferredWidth: 42; Layout.preferredHeight: 42
+                Layout.preferredWidth: 38; Layout.preferredHeight: 38
                 source: "qrc:/branding/formabox.png"
                 fillMode: Image.PreserveAspectFit
                 mipmap: true
@@ -582,37 +474,36 @@ ApplicationWindow {
                 onActivated: root.themeMode = ["system", "light", "dark"][currentIndex]
                 Accessible.name: "界面主题"
             }
-            GlassButton { text: "页面工作台"; onClicked: root.openWorkbench() }
-            GlassButton {
+            GlowButton { text: "页面工作台"; onClicked: root.openWorkbench() }
+            GlowButton {
                 objectName: "engineSettingsButton"
                 visible: !backend.hasBundledEngines
                 text: "引擎设置"
                 onClicked: root.showMissingEngines()
             }
-            GlassButton { text: "常用预设"; onClicked: presetManager.open() }
+            GlowButton { text: "常用预设"; onClicked: presetManager.open() }
         }
     }
     RowLayout {
         anchors.fill: parent; anchors.margins: 14; spacing: 14
-        GlassSurface { Layout.preferredWidth: 132; Layout.fillHeight: true
+        Panel { Layout.preferredWidth: 138; Layout.fillHeight: true
             ColumnLayout { anchors.fill: parent; anchors.margins: 11; spacing: 5
-                Label { text: "分类"; font.bold: true; color: root.muted; Layout.margins: 6 }
                 Repeater {
-                    model: root.categories
-                    delegate: GlassButton {
-                        required property string modelData
+                    model: root.toolSections
+                    delegate: GlowButton {
+                        required property var modelData
                         centered: false
-                        text: modelData
-                        selected: root.category === modelData
+                        text: modelData.title
+                        selected: !root.searchQuery && root.category === modelData.title
                         Layout.fillWidth: true
-                        onClicked: root.category = modelData
+                        onClicked: root.showCategory(modelData.title)
                     }
                 }
                 Item { Layout.fillHeight: true }
             }
         }
         ColumnLayout { Layout.fillWidth: true; Layout.fillHeight: true; spacing: 10
-            GlassSurface { Layout.fillWidth: true; Layout.preferredHeight: 122; accentBorder: drop.containsDrag
+            Panel { Layout.fillWidth: true; Layout.preferredHeight: 74; accentBorder: drop.containsDrag
                 DropArea {
                     id: drop
                     anchors.fill: parent
@@ -624,9 +515,22 @@ ApplicationWindow {
                             event.acceptProposedAction()
                     }
                 }
-                ColumnLayout { anchors.centerIn: parent; spacing: 8
-                    Label { text: "将文件拖入这里"; font.pixelSize: 23; font.bold: true; color: root.ink; Layout.alignment: Qt.AlignHCenter }
-                    RowLayout { Layout.alignment: Qt.AlignHCenter; GlassButton { text: "选择文件"; onClicked: files.open() } GlassButton { text: "选择文件夹"; onClicked: folder.open() } Label { text: root.inputs.length+" 个输入"; color: root.muted } }
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    spacing: 8
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 3
+                        Label { text: "拖入文件"; font.pixelSize: 18; font.weight: Font.DemiBold; color: root.ink }
+                        Label {
+                            text: root.inputs.length ? root.inputs.length + " 个输入" : "文件或文件夹"
+                            color: root.muted
+                            font.pixelSize: 12
+                        }
+                    }
+                    GlowButton { text: "选择文件"; onClicked: files.open() }
+                    GlowButton { text: "选择文件夹"; onClicked: folder.open() }
                 }
             }
             Flow {
@@ -636,7 +540,7 @@ ApplicationWindow {
                 Label { text: "推荐操作"; color: root.muted; height: 34; verticalAlignment: Text.AlignVCenter }
                 Repeater {
                     model: root.suggestions
-                    delegate: GlassButton {
+                    delegate: GlowButton {
                         required property var modelData
                         compact: true
                         text: !backend.hasBundledEngines && (modelData.missing_engines || []).length ?
@@ -652,14 +556,14 @@ ApplicationWindow {
                 Label { text: "快捷预设"; color: root.muted; height: 34; verticalAlignment: Text.AlignVCenter }
                 Repeater {
                     model: root.matchingPresets.slice(0, 3)
-                    delegate: GlassButton {
+                    delegate: GlowButton {
                         required property var modelData
                         compact: true
                         text: modelData.name
                         onClicked: root.runPreset(modelData)
                     }
                 }
-                GlassButton {
+                GlowButton {
                     visible: root.matchingPresets.length > 3
                     compact: true
                     text: "更多"
@@ -668,39 +572,56 @@ ApplicationWindow {
             }
             RowLayout {
                 Layout.fillWidth: true
-                TextField { id: search; Layout.fillWidth: true; placeholderText: "搜索工具名称 / ID" }
-                Label {
-                    text: toolsView.count === backend.tools.length ? toolsView.count + " 个工具"
-                                                                  : toolsView.count + " / " + backend.tools.length + " 个工具"
-                    color: root.muted
+                TextField {
+                    id: search
+                    objectName: "toolSearch"
+                    Layout.fillWidth: true
+                    placeholderText: "搜索全部工具（名称或 ID）"
+                    Accessible.name: "搜索全部工具"
+                    Keys.onEscapePressed: clear()
+                }
+                GlowButton {
+                    visible: search.text.length > 0
+                    compact: true
+                    text: "×"
+                    Accessible.name: "清除搜索"
+                    onClicked: { search.clear(); search.forceActiveFocus() }
                 }
             }
-            GlassSurface { Layout.fillWidth: true; Layout.fillHeight: true
+            RowLayout {
+                Layout.fillWidth: true
+                Label {
+                    text: root.searchQuery ? "搜索结果" : root.category
+                    color: root.ink
+                    font.pixelSize: 17
+                    font.weight: Font.DemiBold
+                }
+                Item { Layout.fillWidth: true }
+                Label { text: toolsView.count + " 个工具"; color: root.muted; font.pixelSize: 12 }
+            }
+            Panel { Layout.fillWidth: true; Layout.fillHeight: true
                 GridView {
                     id: toolsView
-                    anchors.fill: parent; anchors.margins: 10; clip: true
-                    cellWidth: Math.max(145, width / Math.max(1, Math.floor(width / 165)))
-                    cellHeight: 72
-                    model: backend.tools.filter(tool => (root.category === "全部" || tool.category === root.category)
-                                                       && (tool.label + " " + tool.id).toLowerCase().includes(search.text.trim().toLowerCase()))
+                    anchors.fill: parent; anchors.margins: 8; clip: true
+                    cellWidth: width / Math.max(1, Math.floor(width / 151))
+                    cellHeight: 65
+                    model: root.visibleTools
+                    onModelChanged: positionViewAtBeginning()
                     delegate: Item {
                         required property var modelData
                         width: toolsView.cellWidth; height: toolsView.cellHeight
-                        GlassButton {
+                        GlowButton {
                             anchors.fill: parent; anchors.margins: 4
+                            objectName: "toolCard-" + modelData.id
                             text: modelData.label
-                            centered: true
+                            caption: (modelData.missing_engines || []).length
+                                     ? "需要 " + modelData.missing_engines.join("、")
+                                     : modelData.category
+                            centered: false
                             selected: root.selected !== null && root.selected.id === modelData.id
                             onClicked: root.chooseTool(modelData)
-                            Accessible.description: ToolTip.text
                             ToolTip.visible: hovered && ToolTip.text.length > 0
-                            ToolTip.text: (modelData.missing_engines || []).length ? "需要 " + modelData.missing_engines.join("、") : ""
-                            Rectangle {
-                                visible: (modelData.missing_engines || []).length > 0
-                                width: 6; height: 6; radius: 3
-                                anchors { top: parent.top; right: parent.right; margins: 8 }
-                                color: root.dark ? "#f5c692" : "#93521b"
-                            }
+                            ToolTip.text: modelData.description
                         }
                     }
                     ScrollBar.vertical: ScrollBar {}
@@ -712,10 +633,37 @@ ApplicationWindow {
                     color: root.muted
                 }
             }
-            GlassSurface { Layout.fillWidth: true; Layout.preferredHeight: 174
-                ColumnLayout { anchors.fill: parent; anchors.margins: 10
-                    RowLayout { Label { text: "任务中心"; font.bold: true; color: root.ink } Item { Layout.fillWidth: true } GlassButton { text: "清除历史"; enabled: !backend.busy; onClicked: backend.clearHistory() } }
-                    ListView { Layout.fillWidth: true; Layout.fillHeight: true; clip: true; model: backend.jobs; spacing: 4
+            Panel { Layout.fillWidth: true; Layout.preferredHeight: root.taskCenterExpanded ? 148 : 47
+                ColumnLayout { anchors.fill: parent; anchors.margins: 8
+                    RowLayout {
+                        Label {
+                            text: backend.jobs.length ? "任务中心 · " + backend.jobs.length : "任务中心"
+                            font.weight: Font.DemiBold
+                            color: root.ink
+                        }
+                        Item { Layout.fillWidth: true }
+                        GlowButton {
+                            visible: root.taskCenterExpanded && backend.jobs.length > 0
+                            compact: true
+                            text: "清除历史"
+                            enabled: !backend.busy
+                            onClicked: backend.clearHistory()
+                        }
+                        GlowButton {
+                            compact: true
+                            text: root.taskCenterExpanded ? "收起" : "展开"
+                            Accessible.name: (root.taskCenterExpanded ? "收起" : "展开") + "任务中心"
+                            onClicked: root.taskCenterExpanded = !root.taskCenterExpanded
+                        }
+                    }
+                    Label {
+                        Layout.fillWidth: true; Layout.fillHeight: true
+                        visible: root.taskCenterExpanded && !backend.jobs.length
+                        text: "暂无任务"
+                        color: root.muted
+                    }
+                    ListView { visible: root.taskCenterExpanded && backend.jobs.length > 0
+                        Layout.fillWidth: true; Layout.fillHeight: true; clip: true; model: backend.jobs; spacing: 4
                         delegate: RowLayout { required property var modelData; required property int index; width: ListView.view.width
                             ColumnLayout { Layout.fillWidth: true; Label { text: modelData.title+" · "+modelData.state; color: root.ink; Layout.fillWidth: true; elide: Text.ElideRight } Label { text: modelData.message; color: root.muted; Layout.fillWidth: true; elide: Text.ElideRight; font.pixelSize: 11 } }
                             ProgressBar {
@@ -724,8 +672,8 @@ ApplicationWindow {
                                 visible: modelData.state === "运行中" || modelData.state === "完成"
                                 Layout.preferredWidth: 75
                             }
-                            GlassButton { text: "重试"; visible: modelData.canRetry === true; onClicked: backend.retry(index) }
-                            GlassButton { text: modelData.directory?"查看结果":"取消"; visible: !!modelData.directory||modelData.state==="运行中"||modelData.state==="等待"; onClicked: modelData.directory?taskResults.showJob(index, modelData.directory):backend.cancel(index) }
+                            GlowButton { text: "重试"; visible: modelData.canRetry === true; onClicked: backend.retry(index) }
+                            GlowButton { text: modelData.directory?"查看结果":"取消"; visible: !!modelData.directory||modelData.state==="运行中"||modelData.state==="等待"; onClicked: modelData.directory?taskResults.showJob(index, modelData.directory):backend.cancel(index) }
                         }
                         ScrollBar.vertical: ScrollBar {}
                     }
@@ -733,11 +681,11 @@ ApplicationWindow {
             }
             Label { text: root.workflowNotice || backend.status; color: root.muted; Layout.fillWidth: true; elide: Text.ElideRight }
         }
-        GlassSurface { Layout.preferredWidth: 310; Layout.fillHeight: true
+        Panel { Layout.preferredWidth: 310; Layout.fillHeight: true
             ScrollView { id: details; anchors.fill: parent; anchors.margins: 12; contentWidth: availableWidth; clip: true
                 ColumnLayout { width: details.availableWidth; spacing: 9
                     Label { text: root.selected?root.selected.label:"选择一个工具"; color: root.ink; font.pixelSize: 19; font.bold: true; wrapMode: Text.Wrap; Layout.fillWidth: true }
-                    Label { text: root.selected ? root.selected.description : "从工具列表选择一个工具"; color: root.muted; wrapMode: Text.Wrap; Layout.fillWidth: true; visible: text.length>0 }
+                    Label { text: root.selected ? root.selected.description : ""; color: root.muted; wrapMode: Text.Wrap; Layout.fillWidth: true; visible: text.length > 0 }
                     Label {
                         visible: root.selected !== null && !root.selectedReady
                         text: !visible ? "" : backend.hasBundledEngines ?
@@ -745,7 +693,7 @@ ApplicationWindow {
                               "需要安装 " + (root.selected.missing_engines || []).join("、")
                         color: root.muted; wrapMode: Text.Wrap; Layout.fillWidth: true
                     }
-                    RowLayout { Label { text: "输入文件 ("+root.inputs.length+")"; color: root.ink; font.bold: true } Item { Layout.fillWidth: true } GlassButton { text: "清空"; onClicked: root.inputs=[] } }
+                    RowLayout { Label { text: "输入文件 ("+root.inputs.length+")"; color: root.ink; font.bold: true } Item { Layout.fillWidth: true } GlowButton { text: "清空"; onClicked: root.inputs=[] } }
                     ListView { Layout.fillWidth: true; Layout.preferredHeight: Math.min(100,root.inputs.length*30); clip: true; model: root.inputs
                         delegate: RowLayout {
                             required property string modelData
@@ -753,9 +701,9 @@ ApplicationWindow {
                             width: ListView.view.width
                             readonly property bool manualOrder: root.selected !== null && root.selected.id === "file.rename"
                             Label { text: modelData; textFormat: Text.PlainText; Layout.fillWidth: true; color: root.muted; elide: Text.ElideMiddle; ToolTip.visible: h.hovered; ToolTip.text: modelData; HoverHandler{id:h} }
-                            GlassButton { compact: true; text: "↑"; Accessible.name: "上移文件"; visible: manualOrder; enabled: index > 0; onClicked: root.moveInput(index, index - 1) }
-                            GlassButton { compact: true; text: "↓"; Accessible.name: "下移文件"; visible: manualOrder; enabled: index + 1 < root.inputs.length; onClicked: root.moveInput(index, index + 1) }
-                            GlassButton { compact: true; text:"×"; onClicked:{let a=root.inputs.slice();a.splice(index,1);root.inputs=a} }
+                            GlowButton { compact: true; text: "↑"; Accessible.name: "上移文件"; visible: manualOrder; enabled: index > 0; onClicked: root.moveInput(index, index - 1) }
+                            GlowButton { compact: true; text: "↓"; Accessible.name: "下移文件"; visible: manualOrder; enabled: index + 1 < root.inputs.length; onClicked: root.moveInput(index, index + 1) }
+                            GlowButton { compact: true; text:"×"; Accessible.name: "移除输入文件"; onClicked:{let a=root.inputs.slice();a.splice(index,1);root.inputs=a} }
                         }
                     }
                     Repeater { model: root.editableParameters; delegate: ColumnLayout { required property var modelData; Layout.fillWidth: true
@@ -773,8 +721,8 @@ ApplicationWindow {
                         }
                     }}
                     Label { text: "输出目录"; color: root.ink; font.bold: true }
-                    RowLayout { Layout.fillWidth: true; TextField { id: output; objectName: "outputDirectory"; text: backend.outputDefault; Layout.fillWidth: true } GlassButton { compact: true; text:"…"; onClicked: outputFolder.open() } }
-                    GlassButton {
+                    RowLayout { Layout.fillWidth: true; TextField { id: output; objectName: "outputDirectory"; text: backend.outputDefault; Layout.fillWidth: true } GlowButton { compact: true; text:"…"; Accessible.name: "选择输出目录"; onClicked: outputFolder.open() } }
+                    GlowButton {
                         text: root.selected && root.selected.id === "file.rename" ? "预览重命名" : "加入任务队列"
                         primary: true; centered: true; Layout.fillWidth: true
                         enabled: root.selectedReady && root.inputCountValid && output.text.trim().length > 0
@@ -790,27 +738,40 @@ ApplicationWindow {
                                     root.setParam(parameter.key, "")
                         }
                     }
-                    GlassButton { text: "添加到工作流"; Layout.fillWidth: true; enabled: root.canAddStep; onClicked: root.addStep()
+                    GlowButton { text: "添加到工作流"; Layout.fillWidth: true; enabled: root.canAddStep; onClicked: root.addStep()
                         ToolTip.visible: hovered && root.selected !== null && !root.canAddStep && root.steps.length < 32
                         ToolTip.text: "密码工具无法保存到工作流"
                     }
-                    Label { text: "自动化工作流 · "+root.steps.length+" 步"; font.bold: true; color: root.ink }
-                    Repeater { model: root.steps; delegate: RowLayout { required property var modelData; required property int index; Layout.fillWidth: true; Label { text: (index+1)+". "+modelData.tool; color: root.muted; Layout.fillWidth: true; elide: Text.ElideRight } GlassButton { compact: true; text:"×"; onClicked:{let a=root.steps.slice();a.splice(index,1);root.steps=a} } } }
-                    Label {
-                        visible: root.workflowMissing.length > 0
-                        text: "工作流需要 " + root.workflowMissing.join("、")
-                        color: root.muted; wrapMode: Text.Wrap; Layout.fillWidth: true
+                    GlowButton {
+                        objectName: "workflowToggle"
+                        Layout.fillWidth: true
+                        centered: false
+                        compact: true
+                        text: "工作流" + (root.steps.length ? " · " + root.steps.length + " 步" : "")
+                              + (root.workflowExpanded ? "  ▾" : "  ▸")
+                        onClicked: root.workflowExpanded = !root.workflowExpanded
                     }
-                    Label {
-                        visible: root.steps.length > 0 && root.inputs.length > 0
-                                 && !!root.workflowTools[0] && !root.countFits(root.workflowTools[0])
-                        text: "当前输入数量不符合工作流第一步的要求"
-                        color: root.muted; wrapMode: Text.Wrap; Layout.fillWidth: true
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        visible: root.workflowExpanded
+                        spacing: 6
+                        Repeater { model: root.steps; delegate: RowLayout { required property var modelData; required property int index; Layout.fillWidth: true; Label { text: (index+1)+". "+modelData.tool; color: root.muted; Layout.fillWidth: true; elide: Text.ElideRight } GlowButton { compact: true; text:"×"; Accessible.name: "移除工作流步骤"; onClicked:{let a=root.steps.slice();a.splice(index,1);root.steps=a} } } }
+                        Label {
+                            visible: root.workflowMissing.length > 0
+                            text: "工作流需要 " + root.workflowMissing.join("、")
+                            color: root.muted; wrapMode: Text.Wrap; Layout.fillWidth: true
+                        }
+                        Label {
+                            visible: root.steps.length > 0 && root.inputs.length > 0
+                                     && !!root.workflowTools[0] && !root.countFits(root.workflowTools[0])
+                            text: "当前输入数量不符合工作流第一步的要求"
+                            color: root.muted; wrapMode: Text.Wrap; Layout.fillWidth: true
+                        }
+                        GlowButton { text:"执行工作流"; Layout.fillWidth: true; enabled: root.workflowReady && output.text.trim().length > 0; onClicked: backend.submitWorkflow(root.steps,root.inputs,output.text) }
+                        TextArea { id:workflowText; Layout.fillWidth:true; Layout.preferredHeight:75; placeholderText:"工作流 JSON（可复制保存）"; wrapMode:TextEdit.Wrap }
+                        RowLayout { GlowButton { text:"查看 JSON"; enabled: root.steps.length > 0; onClicked:workflowText.text=JSON.stringify(root.steps,null,2) } GlowButton { text:"载入文本"; enabled: workflowText.text.trim().length > 0; onClicked:root.loadWorkflow(workflowText.text) } }
+                        RowLayout { GlowButton { text:"保存文件"; enabled: root.steps.length > 0; onClicked:saveWorkflowFile.open() } GlowButton { text:"打开文件"; onClicked:openWorkflowFile.open() } }
                     }
-                    GlassButton { text:"执行工作流"; Layout.fillWidth: true; enabled: root.workflowReady && output.text.trim().length > 0; onClicked: backend.submitWorkflow(root.steps,root.inputs,output.text) }
-                    TextArea { id:workflowText; Layout.fillWidth:true; Layout.preferredHeight:75; placeholderText:"工作流 JSON（可复制保存）"; wrapMode:TextEdit.Wrap }
-                    RowLayout { GlassButton { text:"查看 JSON"; enabled: root.steps.length > 0; onClicked:workflowText.text=JSON.stringify(root.steps,null,2) } GlassButton { text:"载入文本"; enabled: workflowText.text.trim().length > 0; onClicked:root.loadWorkflow(workflowText.text) } }
-                    RowLayout { GlassButton { text:"保存文件"; enabled: root.steps.length > 0; onClicked:saveWorkflowFile.open() } GlassButton { text:"打开文件"; onClicked:openWorkflowFile.open() } }
                     Label { text:"任务输出在独立目录；原始文件不会被覆盖。"; wrapMode:Text.Wrap; color:root.muted; Layout.fillWidth:true }
                 }
             }

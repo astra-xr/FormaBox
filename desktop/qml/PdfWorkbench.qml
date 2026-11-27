@@ -192,8 +192,8 @@ Dialog {
             RowLayout {
                 Layout.fillWidth: true
                 Item { Layout.fillWidth: true }
-                Button { text: "返回"; onClicked: compressionDialog.close() }
-                Button {
+                GlowButton { text: "返回"; onClicked: compressionDialog.close() }
+                GlowButton {
                     highlighted: true
                     text: pane.compression && !pane.compression.met ? "仍然保存 PDF" : "保存 PDF"
                     enabled: !!pane.compression
@@ -221,14 +221,14 @@ Dialog {
         spacing: 9
 
         RowLayout {
-            Button {
+            GlowButton {
                 text: "插入 PDF 或图片"
                 enabled: !pane.working
                 onClicked: insertFiles.open()
             }
             Label { text: pane.pages.length + " 页" }
             Item { Layout.fillWidth: true }
-            Button {
+            GlowButton {
                 text: "清空"
                 enabled: !pane.working && pane.pages.length > 0
                 onClicked: {
@@ -374,18 +374,18 @@ Dialog {
             Layout.fillWidth: true
             Label { text: "输出目录" }
             Label { Layout.fillWidth: true; text: pane.outputDirectory; elide: Text.ElideMiddle }
-            Button { text: "更改"; onClicked: destinationFolder.open() }
+            GlowButton { text: "更改"; onClicked: destinationFolder.open() }
         }
 
         RowLayout {
             Layout.fillWidth: true
-            Button { text: "前移"; enabled: !pane.working && pane.activeIndex > 0; onClicked: pane.movePage(pane.activeIndex, pane.activeIndex - 1) }
-            Button { text: "后移"; enabled: !pane.working && pane.activeIndex >= 0 && pane.activeIndex + 1 < pane.pages.length; onClicked: pane.movePage(pane.activeIndex, pane.activeIndex + 1) }
-            Button { text: "旋转"; enabled: !pane.working && pane.activeIndex >= 0; onClicked: pane.rotatePage() }
-            Button { text: "移除页面"; enabled: !pane.working && pane.activeIndex >= 0; onClicked: pane.removePage() }
+            GlowButton { text: "前移"; enabled: !pane.working && pane.activeIndex > 0; onClicked: pane.movePage(pane.activeIndex, pane.activeIndex - 1) }
+            GlowButton { text: "后移"; enabled: !pane.working && pane.activeIndex >= 0 && pane.activeIndex + 1 < pane.pages.length; onClicked: pane.movePage(pane.activeIndex, pane.activeIndex + 1) }
+            GlowButton { text: "旋转"; enabled: !pane.working && pane.activeIndex >= 0; onClicked: pane.rotatePage() }
+            GlowButton { text: "移除页面"; enabled: !pane.working && pane.activeIndex >= 0; onClicked: pane.removePage() }
             Item { Layout.fillWidth: true }
-            Button { text: "关闭"; enabled: !pane.working; onClicked: pane.close() }
-            Button { text: limitExport.checked ? "预览压缩" : "导出 PDF"; highlighted: true; enabled: pane.ready; onClicked: pane.exportPdf() }
+            GlowButton { text: "关闭"; enabled: !pane.working; onClicked: pane.close() }
+            GlowButton { text: limitExport.checked ? "预览压缩" : "导出 PDF"; highlighted: true; enabled: pane.ready; onClicked: pane.exportPdf() }
         }
     }
 }

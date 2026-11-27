@@ -80,7 +80,7 @@ Dialog {
                         enabled: !pane.controller.inspecting
                         onTextEdited: pane.setPath(modelData.id, text)
                     }
-                    Button {
+                    GlowButton {
                         text: "浏览"
                         enabled: !pane.controller.inspecting
                         onClicked: {
@@ -89,7 +89,7 @@ Dialog {
                             executable.open()
                         }
                     }
-                    Button {
+                    GlowButton {
                         text: "自动"
                         enabled: !pane.controller.inspecting && !!pane.paths[modelData.id]
                         onClicked: pane.setPath(modelData.id, "")
@@ -110,9 +110,9 @@ Dialog {
         RowLayout {
             Layout.fillWidth: true
             Item { Layout.fillWidth: true }
-            Button { text: "关闭"; enabled: !pane.controller.inspecting; onClicked: pane.close() }
-            Button { text: "测试引擎"; enabled: !pane.controller.inspecting; onClicked: pane.controller.checkEngines(pane.paths, false) }
-            Button { text: "测试并保存"; highlighted: true; enabled: !pane.controller.inspecting; onClicked: pane.controller.checkEngines(pane.paths, true) }
+            GlowButton { text: "关闭"; enabled: !pane.controller.inspecting; onClicked: pane.close() }
+            GlowButton { text: "测试引擎"; enabled: !pane.controller.inspecting; onClicked: pane.controller.checkEngines(pane.paths, false) }
+            GlowButton { text: "测试并保存"; highlighted: true; enabled: !pane.controller.inspecting; onClicked: pane.controller.checkEngines(pane.paths, true) }
         }
     }
 }

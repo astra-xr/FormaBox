@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(FormaBox VERSION 0.7.0 LANGUAGES CXX)
+project(FormaBox VERSION 0.8.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(WIN32)
@@ -25,7 +25,7 @@ set(branding_dir "${CMAKE_CURRENT_SOURCE_DIR}/desktop/assets")
 qt_add_resources(FormaBox "branding"
     PREFIX "/branding"
     BASE "${branding_dir}"
-    FILES "${branding_dir}/formabox.png" "${branding_dir}/button-light.png")
+    FILES "${branding_dir}/formabox.png")
 if(WIN32)
     set(icon_resource "${branding_dir}/formabox.rc")
     set_source_files_properties("${icon_resource}" PROPERTIES
@@ -35,7 +35,7 @@ if(WIN32)
         target_include_directories(${target} PRIVATE "$<$<COMPILE_LANGUAGE:RC>:${branding_dir}>")
     endforeach()
 endif()
-set(formabox_qml Main.qml PdfWorkbench.qml EngineSettings.qml TaskResults.qml RenamePreview.qml)
+set(formabox_qml Main.qml GlowButton.qml PdfWorkbench.qml EngineSettings.qml TaskResults.qml RenamePreview.qml)
 foreach(qml IN LISTS formabox_qml)
     set_source_files_properties("desktop/qml/${qml}" PROPERTIES QT_RESOURCE_ALIAS "${qml}")
 endforeach()
