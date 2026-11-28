@@ -23,7 +23,7 @@ bool collectPasswords(const QJsonValue &value, QStringList &secrets)
             protectedRequest |= collectPasswords(item, secrets);
     } else if (value.isObject()) {
         const auto object = value.toObject();
-        for (auto it = object.cbegin(); it != object.cend(); ++it) {
+        for (auto it = object.constBegin(); it != object.constEnd(); ++it) {
             if (it.key().compare("password", Qt::CaseInsensitive) == 0) {
                 protectedRequest = true;
                 const auto secret = it.value().toVariant().toString();
