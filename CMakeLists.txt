@@ -23,6 +23,7 @@ qt_standard_project_setup(REQUIRES 6.5)
 qt_add_executable(Omnora WIN32
     desktop/main.cpp
     desktop/controller.cpp desktop/controller.h
+    desktop/committedoutput.cpp desktop/committedoutput.h
     desktop/engineregistry.cpp desktop/engineregistry.h
     desktop/inspectionrunner.cpp desktop/inspectionrunner.h
     desktop/previewservice.cpp desktop/previewservice.h desktop/outputpath.h

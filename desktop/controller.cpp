@@ -1,4 +1,5 @@
 #include "controller.h"
+#include "committedoutput.h"
 #include "outputpath.h"
 #include "workerprotocol.h"
 #include <QCoreApplication>
@@ -29,17 +30,6 @@ bool canOpenResult(const QFileInfo &file) {
      "ico", "docx", "xlsx", "pptx", "rtf", "txt", "json", "csv", "zip", "mp4", "mkv", "webm",
      "mov", "avi", "srt", "vtt", "mp3", "wav", "flac", "ogg", "m4a", "aac", "opus", "html", "7z", "tar", "gz"};
  return file.isDir() || formats.contains(suffix);
-}
-
-QVariantMap resultRow(const QFileInfo &file, const QVariantMap &details = {}) {
- QVariantMap row = {{"path", file.filePath()}, {"name", file.fileName()}, {"bytes", file.isDir() ? -1LL : file.size()},
-                    {"folder", file.isDir()}};
- for (const auto *key : {"original_bytes", "target_bytes"}) {
-  bool valid = false;
-  const auto size = details.value(key).toLongLong(&valid);
-  if (valid && size >= 0) row.insert(key, size);
- }
- return row;
 }
 
 QString batchSession(const QJsonObject &request) {
@@ -324,7 +314,7 @@ QString Controller::savePdfCompression(const QString &output) {
                           {"state", QStringLiteral("完成")}, {"progress", 1.0},
                           {"message", QStringLiteral("已保存预览 · %1 KiB").arg(file.size() / 1024.0, 0, 'f', 1)},
                           {"directory", file.absolutePath()},
-                          {"outputs", QVariantList{resultRow(file, saved.details)}}};
+                          {"outputs", QVariantList{taskOutputRow(file, saved.details)}}};
  m_jobs.append(row);
  storeTask(row, {}, false);
  emit jobsChanged();
@@ -364,8 +354,13 @@ void Controller::enqueue(QJsonObject json, QString title, int existing) {
  }
  const bool retrying = existing >= 0;
  const auto id = retrying ? m_jobs.at(existing).toMap().value("taskId").toString() : TaskStore::newId();
- const QVariantMap row{{"taskId", id}, {"title", title}, {"state", "等待"}, {"progress", 0.0},
+ QVariantMap row{{"taskId", id}, {"title", title}, {"state", "等待"}, {"progress", 0.0},
                        {"message", ""}, {"directory", ""}};
+ const auto output = QDir::fromNativeSeparators(json.value("output").toString());
+ if (json.value("tool") != "folder.batch" && QDir::isAbsolutePath(output) && !TaskStore::hasPassword(json)) {
+  row.insert("commitRoot", QDir::cleanPath(output));
+  json.insert("output_commit_id", id);
+ }
  if (!storeTask(row, json, true) && retrying && taskStore.available())
   return;
  const int index = retrying ? existing : m_jobs.size();
@@ -436,11 +431,18 @@ void Controller::finalize(int code,QProcess::ExitStatus exitStatus){
  if(active<0)return;
  buffer+=worker.readAllStandardOutput();
  for(const auto &line:buffer.split('\n'))processLine(line);
+ const auto event=outcome.value("event").toString();
+ if (!protocolError.isEmpty() || exitStatus != QProcess::NormalExit || code != 0 || event != "result") {
+  const auto receipt = CommittedOutput::read(m_jobs.at(active).toMap());
+  if (receipt) {
+   finishJob(receipt.recoveredState());
+   return;
+  }
+ }
  if(!protocolError.isEmpty()){
   finishJob({{"state","失败"},{"message",protocolError},{"errorCode","protocol_error"}});
   return;
  }
- const auto event=outcome.value("event").toString();
  if(exitStatus==QProcess::NormalExit){
   if(event=="result"&&code==0){
    const QFileInfo directory(outcome.value("directory").toString());
@@ -452,7 +454,7 @@ void Controller::finalize(int code,QProcess::ExitStatus exitStatus){
     const QFileInfo file(files.at(index).toString());
     valid = isTaskOutput(directory, file);
     if (valid)
-     outputs.append(resultRow(file, index < details.size() ? details.at(index).toObject().toVariantMap() : QVariantMap{}));
+     outputs.append(taskOutputRow(file, index < details.size() ? details.at(index).toObject().toVariantMap() : QVariantMap{}));
    }
    if(valid){
     finishJob({{"state","完成"},{"progress",1.0},{"directory",directory.absoluteFilePath()},

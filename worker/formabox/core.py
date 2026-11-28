@@ -275,13 +275,21 @@ def execute(req,progress=emit):
     if cancel_value is not None and not isinstance(cancel_value, str):
         raise InvalidRequest('取消标记需要有效的文件路径')
     cancel = Path(cancel_value).absolute() if cancel_value else None
+    commit_id = req.get('output_commit_id')
+    if commit_id is not None and (not isinstance(commit_id, str) or not re.fullmatch('[0-9a-f]{32}', commit_id)):
+        raise InvalidRequest('输出事务编号无效')
+    if commit_id and any(isinstance(item.get('params'), dict) and 'password' in item['params']
+                         for item in (steps if steps is not None else [req])):
+        raise InvalidRequest('含密码的任务不能写入提交回执')
     inputs=[checked_path(x) for x in req['inputs']]
     output=extended_path(checked_path(req.get('output'),allow_missing=True))
-    job=uuid.uuid4().hex[:12]; final=output/f'Omnora-{job}'
+    job=commit_id or uuid.uuid4().hex[:12]; final=output/f'Omnora-{job}'
     if any(p.is_dir() and display_path(output).is_relative_to(display_path(p)) for p in inputs): raise ValueError('输出目录不能位于输入文件夹内部')
     output.mkdir(parents=True,exist_ok=True)
     if req.get('tool') == 'folder.batch':
         return studio_files.run_folder_batch(Context(output, cancel, progress), inputs, req.get('params', {}))
+    if final.exists():
+        raise FileExistsError(str(final))
     staging=Path(tempfile.mkdtemp(prefix='.formabox-',dir=output))
     try:
         if steps is not None:
@@ -303,6 +311,16 @@ def execute(req,progress=emit):
             results=invoke(req['tool'],inputs,req.get('params',{}),ctx)
         relative=[str(p.relative_to(staging)) for p in results]
         details = [ctx.result_details.get(path, {}) for path in results]
+        if commit_id:
+            outputs = []
+            for path, detail in zip(results, details):
+                folder = path.is_dir()
+                outputs.append(dict(path=path.relative_to(staging).as_posix(), folder=folder,
+                                    bytes=-1 if folder else path.stat().st_size, details=detail))
+            with (staging/'.omnora-commit.json').open('x', encoding='utf-8') as journal:
+                json.dump(dict(version=1, task_id=commit_id, outputs=outputs), journal, ensure_ascii=False)
+                journal.flush()
+                os.fsync(journal.fileno())
         if cancel and cancel.exists(): raise Cancelled('任务已取消')
         if final.exists(): raise FileExistsError(str(final))
         staging.rename(final)

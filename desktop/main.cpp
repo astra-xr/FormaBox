@@ -798,6 +798,8 @@ static bool verifyTaskArtifacts(const QString &directory)
         if (controller.busy() || produced.size() != 1 || !produced.first().toMap().value("available").toBool())
             return false;
         resultPath = produced.first().toMap().value("path").toString();
+        if (QFileInfo::exists(QFileInfo(resultPath).dir().filePath(".omnora-commit.json")))
+            return false;
     }
 
     if (!withDatabase([&](const QSqlDatabase &database) {
@@ -825,6 +827,59 @@ static bool verifyTaskArtifacts(const QString &directory)
         QSqlQuery query(database);
         return query.exec("SELECT COUNT(*) FROM task_artifacts") && query.next() && query.value(0).toInt() == 0;
     });
+}
+
+static bool verifyCommittedRecovery(const QString &directory)
+{
+    const QDir root(directory);
+    const QString immediate = TaskStore::newId(), late = TaskStore::newId(), invalid = TaskStore::newId();
+    const auto outputName = [](const QString &id) { return "Omnora-" + id; };
+    {
+        TaskStore active(directory);
+        for (const auto &id : {immediate, late, invalid}) {
+            const QVariantMap row{{"taskId", id}, {"title", "Recovery sample"},
+                                  {"state", QStringLiteral("运行中")}, {"commitRoot", directory}};
+            if (!active.save({row, QJsonObject{{"output", directory}}}, true))
+                return false;
+            const QDir output(root.filePath(id == late ? ".staging" : outputName(id)));
+            if (!QDir().mkpath(output.path()))
+                return false;
+            QImage image(12, 8, QImage::Format_RGB32);
+            image.fill(Qt::cyan);
+            const auto file = output.filePath(QStringLiteral("样本.png"));
+            if (!image.save(file))
+                return false;
+            QFile receipt(output.filePath(".omnora-commit.json"));
+            const auto size = QFileInfo(file).size();
+            const QJsonObject entry{{"path", QStringLiteral("样本.png")}, {"folder", false},
+                                    {"bytes", id == invalid ? size + 1 : size}};
+            const auto bytes = QJsonDocument(QJsonObject{{"version", 1}, {"task_id", id},
+                                                         {"outputs", QJsonArray{entry}}}).toJson(QJsonDocument::Compact);
+            if (!receipt.open(QIODevice::WriteOnly) || receipt.write(bytes) != bytes.size())
+                return false;
+        }
+    }
+    {
+        TaskStore reopened(directory);
+        const auto rows = reopened.load();
+        if (rows.size() != 3 || rows[0].view.value("state") != QStringLiteral("完成") ||
+            !rows[0].request.isEmpty() || rows[0].view.value("outputs").toList().size() != 1 ||
+            rows[1].view.value("state") != QStringLiteral("已中断") || rows[2].view.value("state") != QStringLiteral("已中断"))
+            return false;
+    }
+    if (!root.rename(".staging", outputName(late)))
+        return false;
+    TaskStore reopened(directory);
+    const auto rows = reopened.load();
+    if (rows.size() != 3 || rows[1].view.value("state") != QStringLiteral("完成") ||
+        !rows[1].request.isEmpty() || rows[1].view.value("outputs").toList().size() != 1)
+        return false;
+    const auto events = reopened.events(late);
+    return !QFileInfo::exists(root.filePath(outputName(immediate) + "/.omnora-commit.json")) &&
+           !QFileInfo::exists(root.filePath(outputName(late) + "/.omnora-commit.json")) &&
+           QFileInfo::exists(root.filePath(outputName(invalid) + "/.omnora-commit.json")) &&
+           events.size() == 3 && events[1].toMap().value("errorCode") == "interrupted" &&
+           events[0].toMap().value("attempt").toInt() == 1;
 }
 
 static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controller &controller)
@@ -942,7 +997,8 @@ int main(int argc, char **argv)
         if (options.contains("--verify-runtime") &&
             (!verifyTaskStorage(verificationSettings->filePath("storage-check")) ||
              !verifyTaskEventMigration(verificationSettings->filePath("storage-v1")) ||
-             !verifyTaskArtifacts(verificationSettings->filePath("storage-v2")))) {
+             !verifyTaskArtifacts(verificationSettings->filePath("storage-v2")) ||
+             !verifyCommittedRecovery(verificationSettings->filePath("commit-recovery")))) {
             qWarning("Task storage migration, recovery, artifact records, or password protection failed.");
             return 3;
         }

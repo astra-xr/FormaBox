@@ -611,6 +611,41 @@ def test_cli_preview_protocol_compatibility(tmp_path, img):
     assert replies[0]['error_code'] == 'unsupported_protocol' and replies[0]['error']
 
 
+def test_cli_output_commit_receipt_and_duplicate(tmp_path, img):
+    task_id = 'a1' * 16
+    request = dict(protocol_version=1, tool='image.convert', inputs=[str(img)], output=str(tmp_path / '输出'),
+                   output_commit_id=task_id)
+    code, events = worker_cli(request)
+    assert code == 0 and events[-1]['event'] == 'result'
+    directory = Path(events[-1]['directory'])
+    assert directory.name == f'Omnora-{task_id}'
+    output = Path(events[-1]['files'][0])
+    receipt = json.loads((directory / '.omnora-commit.json').read_text(encoding='utf-8'))
+    assert receipt == {'version': 1, 'task_id': task_id, 'outputs': [
+        {'path': output.name, 'folder': False, 'bytes': output.stat().st_size, 'details': {}}]}
+    existing = output.read_bytes()
+    code, events = worker_cli(request)
+    assert code == 1 and events[-1]['error_code'] == 'file_conflict'
+    assert list(directory.parent.iterdir()) == [directory] and output.read_bytes() == existing
+
+
+def test_output_receipt_does_not_publish_before_rename(tmp_path, img, monkeypatch):
+    task_id = 'b2' * 16
+    output = tmp_path / 'out'
+    request = dict(tool='image.convert', inputs=[str(img)], output=str(output), output_commit_id=task_id)
+    source = img.read_bytes()
+
+    def stop_before_rename(path, destination):
+        assert Path(destination).name == f'Omnora-{task_id}'
+        assert (path / '.omnora-commit.json').is_file()
+        raise OSError('simulated rename failure')
+
+    monkeypatch.setattr(Path, 'rename', stop_before_rename)
+    with pytest.raises(OSError, match='simulated rename failure'):
+        execute(request, lambda *args, **kwargs: None)
+    assert not list(output.iterdir()) and img.read_bytes() == source
+
+
 @pytest.mark.skipif(not shutil.which('ffmpeg'),reason='FFmpeg unavailable')
 def test_media(tmp_path):
     p=tmp_path/'clip.mp4';subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=c=blue:s=160x120:r=15','-f','lavfi','-i','sine=frequency=440','-t','1','-c:v','libx264','-c:a','aac',str(p)],check=True)

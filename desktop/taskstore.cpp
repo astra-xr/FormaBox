@@ -1,4 +1,5 @@
 #include "taskstore.h"
+#include "committedoutput.h"
 
 #include <QDateTime>
 #include <QJsonArray>
@@ -8,6 +9,7 @@
 #include <QSqlQuery>
 #include <QUuid>
 #include <algorithm>
+#include <memory>
 #include <utility>
 
 namespace {
@@ -206,7 +208,11 @@ bool TaskStore::save(const Record &record, bool inFlight)
         m_database.rollback();
         return false;
     }
-    return commit();
+    if (!commit())
+        return false;
+    if (!inFlight)
+        CommittedOutput::acknowledge(record.view);
+    return true;
 }
 
 bool TaskStore::write(const Record &record, bool inFlight, bool imported)
@@ -386,7 +392,7 @@ bool TaskStore::prune()
 
 QList<TaskStore::Record> TaskStore::load()
 {
-    struct Row { Record record; QString owner; };
+    struct Row { Record record; QVariant owner; QByteArray stored; };
     QList<Row> rows;
     QSqlQuery query(m_database);
     if (!available() || !query.exec("SELECT id, owner, snapshot, request FROM tasks ORDER BY sequence")) {
@@ -395,51 +401,70 @@ QList<TaskStore::Record> TaskStore::load()
         return {};
     }
     while (query.next()) {
-        auto view = QJsonDocument::fromJson(query.value(2).toByteArray()).object().toVariantMap();
+        const auto stored = query.value(2).toByteArray();
+        auto view = QJsonDocument::fromJson(stored).object().toVariantMap();
         if (view.isEmpty())
             continue;
         view["taskId"] = query.value(0).toString();
-        rows.append({{view, QJsonDocument::fromJson(query.value(3).toByteArray()).object()}, query.value(1).toString()});
+        rows.append({{view, QJsonDocument::fromJson(query.value(3).toByteArray()).object()}, query.value(1), stored});
     }
     query.finish();
 
     static const QRegularExpression ownerId("^[a-f0-9]{32}$");
     QList<Record> history;
     for (auto &row : rows) {
-        if (!row.owner.isEmpty()) {
-            if (row.owner == m_session || !ownerId.match(row.owner).hasMatch())
+        const auto owner = row.owner.toString();
+        std::unique_ptr<QLockFile> previous;
+        if (!owner.isEmpty()) {
+            if (owner == m_session || !ownerId.match(owner).hasMatch())
                 continue;
-            QLockFile previous(lockPath(m_directory, row.owner));
-            previous.setStaleLockTime(0);
-            if (!previous.tryLock(0))
+            previous = std::make_unique<QLockFile>(lockPath(m_directory, owner));
+            previous->setStaleLockTime(0);
+            if (!previous->tryLock(0))
                 continue;
+        }
+        const auto receipt = (!owner.isEmpty() || row.record.view.value("state").toString() == QStringLiteral("已中断"))
+                                 ? CommittedOutput::read(row.record.view) : CommittedOutput::Receipt{};
+        if (!owner.isEmpty() || receipt) {
             const auto original = row.record.view;
-            row.record.view["state"] = QStringLiteral("已中断");
-            row.record.view["progress"] = 0.0;
-            row.record.view["message"] = row.record.request.isEmpty()
-                ? QStringLiteral("上次运行中断，请重新提交此任务")
-                : QStringLiteral("上次运行中断，可手动再次处理");
-            row.record.view["errorCode"] = "interrupted";
+            if (receipt) {
+                row.record.view.insert(receipt.recoveredState());
+                row.record.view.remove("errorCode");
+            } else {
+                row.record.view["state"] = QStringLiteral("已中断");
+                row.record.view["progress"] = 0.0;
+                row.record.view["message"] = row.record.request.isEmpty()
+                    ? QStringLiteral("上次运行中断，请重新提交此任务")
+                    : QStringLiteral("上次运行中断，可手动再次处理");
+                row.record.view["errorCode"] = "interrupted";
+            }
             if (!m_database.transaction()) {
                 fail(m_database.lastError().text());
                 continue;
             }
-            query.prepare("UPDATE tasks SET owner=NULL, snapshot=? WHERE id=? AND owner=?");
+            query.prepare("UPDATE tasks SET owner=NULL, snapshot=?, request=CASE WHEN ? THEN NULL ELSE request END "
+                          "WHERE id=? AND owner IS ? AND snapshot=?");
             query.addBindValue(encodeSnapshot(snapshot(row.record.view)));
+            query.addBindValue(bool(receipt));
             query.addBindValue(row.record.view.value("taskId"));
             query.addBindValue(row.owner);
+            query.addBindValue(row.stored);
             if (!query.exec()) {
                 fail(query.lastError().text());
                 m_database.rollback();
                 continue;
             }
             if (query.numRowsAffected() != 1 || !addEvent(original, true, true) ||
-                !addEvent(snapshot(row.record.view), false, false)) {
+                !addEvent(snapshot(row.record.view), false, false) || !writeArtifacts(row.record.view)) {
                 m_database.rollback();
                 continue;
             }
             if (!commit())
                 continue;
+            if (receipt) {
+                row.record.request = {};
+                CommittedOutput::acknowledge(row.record.view);
+            }
         }
         if (row.record.view.value("state").toString() == QStringLiteral("完成")) {
             const auto outputs = readArtifacts(row.record.view.value("taskId").toString());
