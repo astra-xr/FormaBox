@@ -54,6 +54,7 @@ public:
  Q_INVOKABLE QVariantList resultItems(int index) const;
  Q_INVOKABLE QVariantList useResults(int index, const QVariantList &paths) const;
  Q_INVOKABLE bool openResult(int index, const QString &path);
+ Q_INVOKABLE QVariantList taskEvents(const QString &taskId);
  Q_INVOKABLE void previewRename(const QVariantList &inputs, const QVariantMap &params);
  Q_INVOKABLE void reload();
  Q_INVOKABLE QString localPath(const QUrl &url) const;
@@ -76,6 +77,7 @@ public:
 signals:
  void toolsChanged(); void jobsChanged(); void statusChanged(); void systemThemeChanged();
  void historyWarningChanged();
+ void taskEventsChanged(const QString &taskId);
  void inspectionChanged();
  void presetsChanged();
  void favoritesChanged();

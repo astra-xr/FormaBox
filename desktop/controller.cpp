@@ -72,7 +72,11 @@ Controller::Controller(const QString &taskDirectory, QObject *parent)
  connect(&toolRegistry, &ToolRegistry::startFailed, this, [this](const QString &details) {
   setStatus(QStringLiteral("无法启动 Python 工具引擎：") + details);
  });
- connect(&worker,&QProcess::started,this,[this]{worker.write(QJsonDocument(activeRequest).toJson(QJsonDocument::Compact));worker.closeWriteChannel();});
+ connect(&worker,&QProcess::started,this,[this]{
+  update(active, {{"state","运行中"},{"progress",-1.0},{"message","准备处理"}}, &activeRequest, true);
+  worker.write(QJsonDocument(activeRequest).toJson(QJsonDocument::Compact));
+  worker.closeWriteChannel();
+ });
  connect(&worker,&QProcess::readyReadStandardOutput,this,[this]{buffer+=worker.readAllStandardOutput();int n;while((n=buffer.indexOf('\n'))>=0){auto line=buffer.left(n);buffer.remove(0,n+1);processLine(line);}});
  connect(&worker,&QProcess::readyReadStandardError,this,[this]{worker.readAllStandardError();});
  connect(&worker,&QProcess::finished,this,&Controller::finalize);
@@ -400,7 +404,6 @@ void Controller::startNext(){
  activeRequest.insert(WorkerProtocol::versionField, WorkerProtocol::version);
  configure(worker);
  worker.setArguments({"-B","-m","formabox","run","--request","-"});
- update(active,{{"state","运行中"},{"progress",-1.0},{"message","准备处理"}}, &activeRequest, true);
  worker.start();
 }
 void Controller::processLine(QByteArray line){
@@ -561,9 +564,15 @@ void Controller::reportHistoryError(const QString &error) {
  emit historyWarningChanged();
 }
 bool Controller::storeTask(const QVariantMap &row, const QJsonObject &request, bool inFlight) {
- if (taskStore.save({row, request}, inFlight)) return true;
+ if (taskStore.save({row, request}, inFlight)) {
+  emit taskEventsChanged(row.value("taskId").toString());
+  return true;
+ }
  reportHistoryError(taskStore.error());
  return false;
+}
+QVariantList Controller::taskEvents(const QString &taskId) {
+ return taskStore.events(taskId);
 }
 void Controller::clearHistory(){
  if(busy())return;

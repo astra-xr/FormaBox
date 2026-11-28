@@ -25,10 +25,15 @@ public:
     QString error() const { return m_error; }
     bool migrate(const QList<Record> &records);
     QList<Record> load();
+    QVariantList events(const QString &taskId);
     bool save(const Record &record, bool inFlight);
     bool clearHistory();
 
 private:
+    bool write(const Record &record, bool inFlight, bool imported = false);
+    bool addEvent(const QVariantMap &view, bool imported, bool inFlight);
+    bool importSnapshots();
+    bool commit();
     bool prune();
     bool fail(QString error);
 

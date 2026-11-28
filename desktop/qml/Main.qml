@@ -398,6 +398,7 @@ ApplicationWindow {
         controller: backend
         onResultFilesChosen: function(paths) { root.inputs = paths }
     }
+    TaskHistory { id: taskHistory; objectName: "taskHistory"; controller: backend }
     Dialog {
         id: presetManager
         title: "常用预设"
@@ -507,7 +508,7 @@ ApplicationWindow {
                 Layout.fillHeight: true
                 Layout.minimumWidth: brand.implicitWidth
                 enabled: !pdfWorkbench.visible && !presetManager.visible && !renamePreview.visible && !studioPreview.visible && !favorites.visible &&
-                         !taskResults.visible && !(engineSettings.item && engineSettings.item.visible)
+                        !taskResults.visible && !taskHistory.visible && !(engineSettings.item && engineSettings.item.visible)
                 RowLayout {
                     id: brand
                     anchors.left: parent.left
@@ -782,6 +783,7 @@ ApplicationWindow {
                                 Layout.preferredWidth: 75
                             }
                             GlowButton { text: modelData.canResume ? "继续批处理" : "重试"; visible: modelData.canRetry === true; onClicked: backend.retry(index) }
+                            GlowButton { text: "执行记录"; onClicked: taskHistory.showTask(modelData.taskId, modelData.title) }
                             GlowButton { text: modelData.directory?"查看结果":"取消"; visible: !!modelData.directory||modelData.state==="运行中"||modelData.state==="等待"; onClicked: modelData.directory?taskResults.showJob(index, modelData.directory):backend.cancel(index) }
                         }
                         ScrollBar.vertical: ScrollBar {}

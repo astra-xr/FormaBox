@@ -7,6 +7,7 @@
 #include <QIcon>
 #include <QImage>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJSValue>
 #include <QMouseEvent>
 #include <QPainter>
@@ -19,6 +20,7 @@
 #include <QSet>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QSqlQuery>
 #include <QTimer>
 #include <functional>
 #include "controller.h"
@@ -604,7 +606,9 @@ static bool verifyTaskStorage(const QString &directory)
             jobs.first().toMap().value("title") != "Legacy result" || !jobs.last().toMap().value("canResume").toBool())
             return false;
         legacyId = jobs.first().toMap().value("taskId").toString();
-        if (legacyId.isEmpty())
+        const auto events = migrated.taskEvents(legacyId);
+        if (legacyId.isEmpty() || events.size() != 1 || events.first().toMap().value("attempt").toInt() != 0 ||
+            events.first().toMap().value("timestamp").toLongLong() != 0)
             return false;
     }
     const auto interruptedId = TaskStore::newId();
@@ -618,7 +622,9 @@ static bool verifyTaskStorage(const QString &directory)
         const QJsonObject protectedRequest{{"steps", QJsonArray{protectedStep}}};
         const TaskStore::Record queued{{{"taskId", protectedId}, {"title", "Protected task"},
                                         {"state", QStringLiteral("等待")}, {"message", password}}, protectedRequest};
-        if (!running.save(job, true) || !running.save(queued, true))
+        auto initial = job;
+        initial.view["state"] = QStringLiteral("等待");
+        if (!running.save(initial, true) || !running.save(job, true) || !running.save(job, true) || !running.save(queued, true))
             return false;
         TaskStore concurrent(directory);
         if (!concurrent.available() || concurrent.load().size() != 2 || concurrent.save(job, true))
@@ -635,6 +641,10 @@ static bool verifyTaskStorage(const QString &directory)
         if (ordinary.value("taskId") != interruptedId || ordinary.value("errorCode") != "interrupted" ||
             !ordinary.value("canRetry").toBool() || protectedJob.value("taskId") != protectedId ||
             protectedJob.value("errorCode") != "interrupted" || protectedJob.value("canRetry").toBool())
+            return false;
+        const auto interrupted = reopened.taskEvents(interruptedId);
+        if (interrupted.size() != 3 || interrupted.first().toMap().value("errorCode") != "interrupted" ||
+            interrupted.at(1).toMap().value("state") != QStringLiteral("运行中"))
             return false;
         QEventLoop wait;
         QObject::connect(&reopened, &Controller::jobsChanged, &wait, [&] {
@@ -653,14 +663,52 @@ static bool verifyTaskStorage(const QString &directory)
     database.close();
     {
         Controller reopened(directory);
-        if (reopened.jobs().size() != 4 || reopened.jobs().at(2).toMap().value("errorCode") != "file_not_found")
+        const auto events = reopened.taskEvents(interruptedId);
+        if (reopened.jobs().size() != 4 || reopened.jobs().at(2).toMap().value("errorCode") != "file_not_found" ||
+            events.size() != 6 || events.first().toMap().value("attempt").toInt() != 2 ||
+            events.first().toMap().value("errorCode") != "file_not_found" ||
+            events.first().toMap().value("timestamp").toLongLong() <= 0 ||
+            events.at(1).toMap().value("state") != QStringLiteral("运行中") ||
+            events.at(2).toMap().value("state") != QStringLiteral("等待"))
             return false;
         reopened.clearHistory();
         if (!reopened.jobs().isEmpty() || !reopened.historyWarning().isEmpty())
             return false;
     }
     Controller cleared(directory);
-    return cleared.jobs().isEmpty() && cleared.historyWarning().isEmpty();
+    return cleared.jobs().isEmpty() && cleared.historyWarning().isEmpty() && cleared.taskEvents(interruptedId).isEmpty();
+}
+
+static bool verifyTaskEventMigration(const QString &directory)
+{
+    if (!QDir().mkpath(directory))
+        return false;
+    const auto connection = TaskStore::newId();
+    const auto id = TaskStore::newId();
+    bool seeded = false;
+    {
+        auto database = QSqlDatabase::addDatabase("QSQLITE", connection);
+        database.setDatabaseName(QDir(directory).filePath("tasks.sqlite"));
+        if (database.open()) {
+            QSqlQuery query(database);
+            if (query.exec("CREATE TABLE tasks (sequence INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL, "
+                           "owner TEXT, snapshot BLOB NOT NULL, request BLOB)") &&
+                query.exec("PRAGMA user_version=1") && query.prepare("INSERT INTO tasks(id, snapshot) VALUES(?, ?)")) {
+                query.addBindValue(id);
+                query.addBindValue(QJsonDocument(QJsonObject{{"state", QStringLiteral("失败")},
+                    {"errorCode", "file_not_found"}}).toJson(QJsonDocument::Compact));
+                seeded = query.exec();
+            }
+        }
+    }
+    QSqlDatabase::removeDatabase(connection);
+    if (!seeded)
+        return false;
+    TaskStore upgraded(directory);
+    const auto events = upgraded.events(id);
+    return upgraded.available() && upgraded.load().size() == 1 && events.size() == 1 &&
+           events.first().toMap().value("timestamp").toLongLong() == 0 &&
+           events.first().toMap().value("errorCode") == "file_not_found";
 }
 
 static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controller &controller)
@@ -728,9 +776,16 @@ static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controll
     const bool ready = window.property("workflowReady").toBool() &&
                        verifyWorkbench(engine, root, controller) && verifySubtitles(engine, root, controller) &&
                        verifyWorkerFailure(controller);
-    if (ready)
-        qInfo("Desktop checks passed: featured tools, grouped navigation, global search, button themes, PDF editing, task results, rename preview, workflows, and subtitles.");
-    return ready;
+    if (!ready)
+        return false;
+    auto history = engine.newQObject(root->findChild<QObject *>("taskHistory"));
+    const auto job = controller.jobs().constLast().toMap();
+    const bool historyWorks = invokeQml(history, "showTask", {QJSValue(job.value("taskId").toString()),
+                                                              QJSValue(job.value("title").toString())}) &&
+                              history.property("records").property("length").toInt() == 3 && invokeQml(history, "close");
+    if (historyWorks)
+        qInfo("Desktop checks passed: task execution history and existing desktop workflows.");
+    return historyWorks;
 }
 
 int main(int argc, char **argv)
@@ -768,7 +823,9 @@ int main(int argc, char **argv)
             return 2;
         QSettings::setDefaultFormat(QSettings::IniFormat);
         QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, verificationSettings->path());
-        if (options.contains("--verify-runtime") && !verifyTaskStorage(verificationSettings->filePath("storage-check"))) {
+        if (options.contains("--verify-runtime") &&
+            (!verifyTaskStorage(verificationSettings->filePath("storage-check")) ||
+             !verifyTaskEventMigration(verificationSettings->filePath("storage-v1")))) {
             qWarning("Task storage migration, recovery, or password protection failed.");
             return 3;
         }

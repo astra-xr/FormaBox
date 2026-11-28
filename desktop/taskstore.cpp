@@ -1,5 +1,6 @@
 #include "taskstore.h"
 
+#include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QRegularExpression>
@@ -44,7 +45,7 @@ QString redact(QString text, const QStringList &secrets)
     return text;
 }
 
-QByteArray snapshot(QVariantMap fields, const QStringList &secrets = {})
+QVariantMap snapshot(QVariantMap fields, const QStringList &secrets = {})
 {
     fields.remove("canRetry");
     fields.remove("canResume");
@@ -63,7 +64,7 @@ QByteArray snapshot(QVariantMap fields, const QStringList &secrets = {})
         if (fields.contains("outputs"))
             fields["outputs"] = outputs;
     }
-    return QJsonDocument::fromVariant(fields).toJson(QJsonDocument::Compact);
+    return fields;
 }
 }
 
@@ -99,18 +100,31 @@ TaskStore::TaskStore(const QString &directory)
     }
     const auto version = query.value(0).toInt();
     query.finish();
-    if (version > 1) {
+    if (version > 2) {
         fail(QStringLiteral("任务数据库版本高于当前程序支持的版本"));
+        return;
+    }
+    if (!query.exec("PRAGMA foreign_keys=ON") || !m_database.transaction()) {
+        fail(query.lastError().isValid() ? query.lastError().text() : m_database.lastError().text());
         return;
     }
     if (!query.exec("CREATE TABLE IF NOT EXISTS tasks (sequence INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL, "
                     "owner TEXT, snapshot BLOB NOT NULL, request BLOB)") ||
         !query.exec("CREATE TABLE IF NOT EXISTS task_meta (key TEXT PRIMARY KEY)") ||
-        (version == 0 && !query.exec("PRAGMA user_version=1"))) {
+        !query.exec("CREATE TABLE IF NOT EXISTS task_events (sequence INTEGER PRIMARY KEY, "
+                    "task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, attempt INTEGER NOT NULL, "
+                    "state TEXT NOT NULL, occurred_at INTEGER, message TEXT, error_code TEXT)") ||
+        !query.exec("CREATE INDEX IF NOT EXISTS task_events_by_task ON task_events(task_id, sequence)") ||
+        (version < 2 && !query.exec("PRAGMA user_version=2"))) {
         fail(query.lastError().text());
+        m_database.rollback();
         return;
     }
-    m_ready = true;
+    if (version < 2 && !importSnapshots()) {
+        m_database.rollback();
+        return;
+    }
+    m_ready = commit();
 }
 
 TaskStore::~TaskStore()
@@ -126,6 +140,15 @@ bool TaskStore::fail(QString error)
 {
     m_error = error.isEmpty() ? QStringLiteral("任务数据库不可用") : std::move(error);
     return false;
+}
+
+bool TaskStore::commit()
+{
+    if (m_database.commit())
+        return true;
+    const auto error = m_database.lastError().text();
+    m_database.rollback();
+    return fail(error);
 }
 
 bool TaskStore::hasPassword(const QJsonObject &request)
@@ -147,24 +170,34 @@ bool TaskStore::migrate(const QList<Record> &records)
     }
     if (marker.numRowsAffected() == 1) {
         for (const auto &record : records) {
-            if (!save(record, false)) {
+            if (!write(record, false, true)) {
                 m_database.rollback();
                 return false;
             }
         }
     }
-    if (!m_database.commit()) {
-        const auto error = m_database.lastError().text();
+    if (!prune()) {
         m_database.rollback();
-        return fail(error);
+        return false;
     }
-    return true;
+    return commit();
 }
 
 bool TaskStore::save(const Record &record, bool inFlight)
 {
     if (!available())
         return false;
+    if (!m_database.transaction())
+        return fail(m_database.lastError().text());
+    if (!write(record, inFlight) || (!inFlight && !prune())) {
+        m_database.rollback();
+        return false;
+    }
+    return commit();
+}
+
+bool TaskStore::write(const Record &record, bool inFlight, bool imported)
+{
     QStringList secrets;
     const bool protectedRequest = collectPasswords(record.request, secrets);
     std::sort(secrets.begin(), secrets.end(), [](const auto &a, const auto &b) { return a.size() > b.size(); });
@@ -172,20 +205,88 @@ bool TaskStore::save(const Record &record, bool inFlight)
     request.remove("cancel");
     const bool retainRequest = !protectedRequest && !request.isEmpty() &&
                                (inFlight || record.view.value("canRetry").toBool());
+    const auto view = snapshot(record.view, secrets);
     QSqlQuery query(m_database);
     query.prepare("INSERT INTO tasks(id, owner, snapshot, request) VALUES(?, ?, ?, ?) "
                   "ON CONFLICT(id) DO UPDATE SET owner=excluded.owner, snapshot=excluded.snapshot, request=excluded.request "
                   "WHERE tasks.owner=? OR (tasks.owner IS NULL AND tasks.request IS NOT NULL)");
     query.addBindValue(record.view.value("taskId"));
     query.addBindValue(inFlight ? QVariant(m_session) : QVariant());
-    query.addBindValue(snapshot(record.view, secrets));
+    query.addBindValue(QJsonDocument::fromVariant(view).toJson(QJsonDocument::Compact));
     query.addBindValue(retainRequest ? QVariant(QJsonDocument(request).toJson(QJsonDocument::Compact)) : QVariant());
     query.addBindValue(m_session);
     if (!query.exec())
         return fail(query.lastError().text());
     if (query.numRowsAffected() != 1)
         return fail(QStringLiteral("任务正在另一个万象窗口运行或已处理"));
-    return inFlight || prune();
+    return addEvent(view, imported, inFlight);
+}
+
+bool TaskStore::addEvent(const QVariantMap &view, bool imported, bool inFlight)
+{
+    const auto id = view.value("taskId");
+    const auto state = view.value("state").toString();
+    if (state.isEmpty())
+        return true;
+    QSqlQuery query(m_database);
+    query.prepare("SELECT attempt, state FROM task_events WHERE task_id=? ORDER BY sequence DESC LIMIT 1");
+    query.addBindValue(id);
+    if (!query.exec())
+        return fail(query.lastError().text());
+    int attempt = imported && !inFlight ? 0 : 1;
+    if (query.next()) {
+        if (query.value(1).toString() == state)
+            return true;
+        attempt = query.value(0).toInt();
+        if (state == QStringLiteral("等待"))
+            ++attempt;
+    }
+    query.finish();
+    query.prepare("INSERT INTO task_events(task_id, attempt, state, occurred_at, message, error_code) "
+                  "VALUES(?, ?, ?, ?, ?, ?)");
+    query.addBindValue(id);
+    query.addBindValue(attempt);
+    query.addBindValue(state);
+    query.addBindValue(imported ? QVariant() : QVariant(QDateTime::currentMSecsSinceEpoch()));
+    query.addBindValue(view.value("message"));
+    query.addBindValue(view.value("errorCode"));
+    return query.exec() || fail(query.lastError().text());
+}
+
+bool TaskStore::importSnapshots()
+{
+    QSqlQuery query(m_database);
+    if (!query.exec("SELECT id, owner, snapshot FROM tasks WHERE NOT EXISTS "
+                    "(SELECT 1 FROM task_events WHERE task_id=tasks.id)"))
+        return fail(query.lastError().text());
+    while (query.next()) {
+        auto view = QJsonDocument::fromJson(query.value(2).toByteArray()).object().toVariantMap();
+        view["taskId"] = query.value(0);
+        if (!addEvent(view, true, !query.value(1).isNull()))
+            return false;
+    }
+    return true;
+}
+
+QVariantList TaskStore::events(const QString &taskId)
+{
+    if (!available())
+        return {};
+    QSqlQuery query(m_database);
+    query.prepare("SELECT attempt, state, occurred_at, message, error_code FROM task_events "
+                  "WHERE task_id=? ORDER BY sequence DESC");
+    query.addBindValue(taskId);
+    if (!query.exec()) {
+        fail(query.lastError().text());
+        return {};
+    }
+    QVariantList events;
+    while (query.next()) {
+        events.append(QVariantMap{{"attempt", query.value(0)}, {"state", query.value(1)},
+                                  {"timestamp", query.value(2).toLongLong()}, {"message", query.value(3)},
+                                  {"errorCode", query.value(4)}});
+    }
+    return events;
 }
 
 bool TaskStore::prune()
@@ -225,21 +326,32 @@ QList<TaskStore::Record> TaskStore::load()
             previous.setStaleLockTime(0);
             if (!previous.tryLock(0))
                 continue;
+            const auto original = row.record.view;
             row.record.view["state"] = QStringLiteral("已中断");
             row.record.view["progress"] = 0.0;
             row.record.view["message"] = row.record.request.isEmpty()
                 ? QStringLiteral("上次运行中断，请重新提交此任务")
                 : QStringLiteral("上次运行中断，可手动再次处理");
             row.record.view["errorCode"] = "interrupted";
+            if (!m_database.transaction()) {
+                fail(m_database.lastError().text());
+                continue;
+            }
             query.prepare("UPDATE tasks SET owner=NULL, snapshot=? WHERE id=? AND owner=?");
-            query.addBindValue(snapshot(row.record.view));
+            query.addBindValue(QJsonDocument::fromVariant(snapshot(row.record.view)).toJson(QJsonDocument::Compact));
             query.addBindValue(row.record.view.value("taskId"));
             query.addBindValue(row.owner);
             if (!query.exec()) {
                 fail(query.lastError().text());
+                m_database.rollback();
                 continue;
             }
-            if (query.numRowsAffected() != 1)
+            if (query.numRowsAffected() != 1 || !addEvent(original, true, true) ||
+                !addEvent(snapshot(row.record.view), false, false)) {
+                m_database.rollback();
+                continue;
+            }
+            if (!commit())
                 continue;
         }
         history.append(std::move(row.record));

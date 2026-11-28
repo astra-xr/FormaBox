@@ -1,5 +1,13 @@
 # 实际测试记录
 
+## 0.9.2 开发中 · SQLite 任务存储
+
+在隔离的 Windows 测试目录运行 `Omnora.exe --verify-runtime`，验证旧 QSettings 历史与批处理记录只迁移一次、并行实例的任务不会误判中断、重开后能手动重试普通任务并保留 ID。含密码的工作流只恢复状态，数据库文件中没有测试密码。清除历史后再次开启不会重新迁移。验证使用样本历史。
+
+首次 Windows 构建发现 Qt 6.8 的 `QJsonObject` 迭代器兼容问题，改用 `constBegin` 和 `constEnd` 后，[Windows CI](https://github.com/astra-xr/Omnora/actions/runs/46099227049) 通过桌面启动、SQLite 驱动部署和 NSIS 模板编译。内置引擎下 71 项 pytest 和 79 项工具实跑均通过，工具失败和阻塞均为 0。
+
+校验 Windows 产物后同步本机 `dist/Omnora.exe`、`Qt6Sql.dll` 和 `plugins/sqldrivers/qsqlite.dll`。本机启动器的 `--verify-runtime` 和中文文件名的 `--verify-quick --quick-photo --send-to` 均退出 0，4 项本机定向 worker 兼容测试通过。
+
 ## 0.9.1 开发中 · Worker 协议 v1
 
 本机 Windows 的 6 项定向 pytest 通过，验证无版本号请求、显式 v1 请求、无效 JSON、未知版本、缺文件、缺引擎、无效参数和取消。用项目启动器运行同步后的 `Omnora.exe --verify-runtime`，退出码为 0。桌面回归验证缺文件时记录 `file_not_found`，保留重试状态，并且未建立输出目录。
