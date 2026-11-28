@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: formabox-release-windows
-  cancel-in-progress: false
+  cancel-in-progress: ${{ contains(github.event.head_commit.message, '[supersede release]') }}
 
 jobs:
   release:
