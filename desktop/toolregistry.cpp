@@ -30,6 +30,7 @@ ToolRegistry::~ToolRegistry()
 {
     // QProcess can emit finished while stopping an active child in its destructor.
     m_catalogue.disconnect(this);
+    m_catalogue.stop();
 }
 
 QVariantMap ToolRegistry::find(const QString &id) const
@@ -51,7 +52,7 @@ void ToolRegistry::reload()
     m_configureProcess(m_catalogue);
     m_catalogue.setArguments({"-B", "-m", "formabox", "list", "--check-engines"});
     emit loading();
-    m_catalogue.start();
+    m_catalogue.startManaged();
 }
 
 void ToolRegistry::schedulePendingReload()

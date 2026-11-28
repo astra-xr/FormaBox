@@ -6,6 +6,7 @@
 #include <QQueue>
 #include <QHash>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QJsonObject>
 #include <memory>
 #include "engineregistry.h"
@@ -29,6 +30,7 @@ class Controller final : public QObject {
  Q_PROPERTY(QVariantList engineOptions READ engineOptions CONSTANT)
 public:
  explicit Controller(const QString &taskDirectory, QObject *parent=nullptr);
+ ~Controller() override;
  QVariantList tools() const {return toolRegistry.tools();}
  QVariantList jobs() const {return m_jobs;}
  QString status() const {return m_status;}
@@ -94,7 +96,9 @@ private:
  PreviewService previews;
  TaskStore taskStore;
  QString m_historyWarning;
- QVariantList m_jobs; QString m_status; QProcess worker; QByteArray buffer; QQueue<Request> pending; int active=-1;
+ QVariantList m_jobs; QString m_status; WorkerProcess worker; QByteArray buffer; QQueue<Request> pending; int active=-1;
+ QTimer cancelDeadline;
+ bool cancelTimedOut = false;
  QVariantList m_presets;
  QStringList m_favorites;
  QString storePreset(QString name, QVariantMap preset, const QVariantList &inputs);

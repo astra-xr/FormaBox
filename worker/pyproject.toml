@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 [project]
 name = "formabox-worker"
-version = "0.9.3"
+version = "0.9.4"
 requires-python = ">=3.11"
 dependencies = ["Pillow>=11.3,<13", "pypdf>=5.9,<7", "pypdfium2>=4.30,<6", "cryptography>=44,<48", "openpyxl>=3.1.5,<4", "py7zr>=1.1.4,<1.2"]
 [project.optional-dependencies]

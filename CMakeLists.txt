@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(Omnora VERSION 0.9.3 LANGUAGES CXX)
+project(Omnora VERSION 0.9.4 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(WIN32)
@@ -7,6 +7,10 @@ if(WIN32)
     # The Windows loader looks beside Omnora.exe for the deployed Qt DLLs.
     set(CMAKE_INSTALL_BINDIR ".")
     add_executable(OmnoraLauncher WIN32 desktop/launcher_win.cpp)
+    add_executable(OmnoraInstallTransaction packaging/windows/installtransaction_win.cpp)
+    target_link_libraries(OmnoraInstallTransaction PRIVATE advapi32)
+    set_target_properties(OmnoraInstallTransaction PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/installer/$<CONFIG>")
     set_target_properties(OmnoraLauncher PROPERTIES
         OUTPUT_NAME Omnora
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/launcher/$<CONFIG>")
@@ -14,8 +18,10 @@ if(WIN32)
     if(MSVC)
         target_compile_options(OmnoraLauncher PRIVATE /utf-8)
         set_property(TARGET OmnoraLauncher PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        set_property(TARGET OmnoraInstallTransaction PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     elseif(MINGW)
         target_link_options(OmnoraLauncher PRIVATE -municode -static)
+        target_link_options(OmnoraInstallTransaction PRIVATE -municode -static)
     endif()
 endif()
 find_package(Qt6 6.5 REQUIRED COMPONENTS Quick QuickControls2 Sql)
@@ -28,7 +34,8 @@ qt_add_executable(Omnora WIN32
     desktop/inspectionrunner.cpp desktop/inspectionrunner.h
     desktop/previewservice.cpp desktop/previewservice.h desktop/outputpath.h
     desktop/taskstore.cpp desktop/taskstore.h
-    desktop/toolregistry.cpp desktop/toolregistry.h)
+    desktop/toolregistry.cpp desktop/toolregistry.h
+    desktop/workerprocess.cpp desktop/workerprocess.h)
 set(branding_dir "${CMAKE_CURRENT_SOURCE_DIR}/desktop/assets")
 qt_add_resources(Omnora "branding"
     PREFIX "/branding"

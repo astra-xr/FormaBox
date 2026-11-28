@@ -1,7 +1,7 @@
 #pragma once
 
 #include <QJsonObject>
-#include <QProcess>
+#include "workerprocess.h"
 #include <QTimer>
 #include <QVariant>
 #include <functional>
@@ -29,7 +29,7 @@ private:
     void finish(int code, QProcess::ExitStatus status);
 
     const ConfigureProcess m_configureProcess;
-    QProcess m_process;
+    WorkerProcess m_process;
     QTimer m_timeout;
     QString m_command;
     QJsonObject m_request;

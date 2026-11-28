@@ -27,6 +27,9 @@
 #include "workerprotocol.h"
 #ifdef Q_OS_WIN
 #include "windowframe_win.h"
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
 #endif
 
 static bool invokeQml(QJSValue object, const char *method, const QJSValueList &arguments = {})
@@ -882,6 +885,55 @@ static bool verifyCommittedRecovery(const QString &directory)
            events[0].toMap().value("attempt").toInt() == 1;
 }
 
+#ifdef Q_OS_WIN
+static bool verifyWorkerProcessTrees()
+{
+    auto python = qEnvironmentVariable("FORMABOX_PYTHON");
+    if (python.isEmpty()) {
+        const auto bundled = QDir(QCoreApplication::applicationDirPath()).filePath("python/python.exe");
+        const auto development = QDir(QCoreApplication::applicationDirPath()).filePath("../.venv/Scripts/python.exe");
+        python = QFileInfo::exists(bundled) ? bundled :
+                 QFileInfo::exists(development) ? development : QStandardPaths::findExecutable("python.exe");
+    }
+    const auto startFixture = [&](WorkerProcess &process) -> HANDLE {
+        process.setProgram(python);
+        process.setArguments({"-c", "import subprocess, sys; "
+            "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); "
+            "print(child.pid, flush=True); sys.stdin.read(1)"});
+        process.startManaged();
+        if (!process.waitForStarted(5000) ||
+            (!process.canReadLine() && !process.waitForReadyRead(5000)))
+            return nullptr;
+        bool valid = false;
+        const auto child = process.readLine().trimmed().toULong(&valid);
+        return valid ? OpenProcess(SYNCHRONIZE, FALSE, child) : nullptr;
+    };
+    WorkerProcess cancelled;
+    WorkerProcess completed;
+    const auto first = startFixture(cancelled);
+    const auto second = startFixture(completed);
+    bool passed = first && second;
+    if (passed) {
+        cancelled.killTree();
+        passed = cancelled.waitForFinished(5000) && WaitForSingleObject(first, 5000) == WAIT_OBJECT_0 &&
+                 WaitForSingleObject(second, 0) == WAIT_TIMEOUT;
+        completed.closeWriteChannel();
+        passed = completed.waitForFinished(5000) && completed.exitCode() == 0 &&
+                 WaitForSingleObject(second, 5000) == WAIT_OBJECT_0 && passed;
+    }
+    if (first) CloseHandle(first);
+    if (second) CloseHandle(second);
+    auto destroyed = std::make_unique<WorkerProcess>();
+    const auto third = startFixture(*destroyed);
+    destroyed.reset();
+    if (!third)
+        return false;
+    const auto closed = WaitForSingleObject(third, 5000);
+    CloseHandle(third);
+    return passed && closed == WAIT_OBJECT_0;
+}
+#endif
+
 static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controller &controller)
 {
     if (root->property("title").toString() != QStringLiteral("万象 · Omnora"))
@@ -975,7 +1027,9 @@ int main(int argc, char **argv)
     const bool verifyQuick = arguments.removeAll("--verify-quick") > 0;
     const auto sendTo = arguments.indexOf("--send-to");
     const auto options = sendTo < 0 ? arguments : arguments.first(sendTo);
-    const bool verify = verifyQuick || verifyImport || options.contains("--verify-runtime");
+    const bool verifyInstall = options.contains("--verify-install");
+    const bool verifyRuntime = options.contains("--verify-runtime");
+    const bool verify = verifyQuick || verifyImport || verifyInstall || verifyRuntime;
     const QString quickTool = options.contains("--quick-office") ? "doc.pdf" :
                               options.contains("--quick-photo") ? "image.compress" : "";
     QVariantList launchedFiles;
@@ -994,7 +1048,7 @@ int main(int argc, char **argv)
             return 2;
         QSettings::setDefaultFormat(QSettings::IniFormat);
         QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, verificationSettings->path());
-        if (options.contains("--verify-runtime") &&
+        if (verifyRuntime &&
             (!verifyTaskStorage(verificationSettings->filePath("storage-check")) ||
              !verifyTaskEventMigration(verificationSettings->filePath("storage-v1")) ||
              !verifyTaskArtifacts(verificationSettings->filePath("storage-v2")) ||
@@ -1002,6 +1056,12 @@ int main(int argc, char **argv)
             qWarning("Task storage migration, recovery, artifact records, or password protection failed.");
             return 3;
         }
+#ifdef Q_OS_WIN
+        if (verifyRuntime && !verifyWorkerProcessTrees()) {
+            qWarning("Windows worker process-tree cleanup failed.");
+            return 6;
+        }
+#endif
     }
     const auto localData = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
     const auto taskDirectory = verify ? verificationSettings->filePath("history") :
@@ -1023,7 +1083,8 @@ int main(int argc, char **argv)
 #ifdef Q_OS_WIN
         window->setProperty("immersiveFrame", installWindowFrame(*window));
 #endif
-        window->show();
+        if (!verifyInstall)
+            window->show();
     }
 
     if (!quickTool.isEmpty() || verifyQuick) {
@@ -1076,6 +1137,10 @@ int main(int argc, char **argv)
             if (verificationStarted || engine.rootObjects().isEmpty() || controller.tools().isEmpty())
                 return;
             verificationStarted = true;
+            if (verifyInstall) {
+                app.exit(controller.historyWarning().isEmpty() ? 0 : 3);
+                return;
+            }
             auto *root = engine.rootObjects().constFirst();
             const bool checkImport = verifyImport || sendTo >= 0;
             const bool launchPassed = !checkImport ||

@@ -1,5 +1,11 @@
 # 实际测试记录
 
+## 0.9.4 · 进程回收与覆盖升级
+
+本机 Windows x64 使用 Qt 6.8.3 和 MSVC 2022 编译。新桌面二进制通过 `--verify-runtime`，包含真实 Python 子进程的强制终止、自然退出、析构回收和多进程组隔离测试。安装事务在含中文和空格的样本目录模拟文件锁，确认部分替换失败后恢复原文件，解除锁定后可重试，并保留用户文件。
+
+发布工作流依次验证完整安装包、0.9.0 与 0.9.3 的真实覆盖升级及回滚。以对应 GitHub Actions 运行和 Release 为发布依据。
+
 ## 0.9.3 Windows 完整预览版
 
 本机 Windows x64 使用 Qt 6.8.3 与 MSVC 2022 编译 Release。覆盖项目根目录启动器及 `dist/Omnora.exe` 后，`Omnora.exe --verify-runtime` 退出 0。用现有虚拟环境和引擎运行 `python -m pytest -q -ra tests`，73 项通过。对已部署的 worker 实跑 `python -X utf8 -B tests/smoke_tools.py`，79 项通过，0 项失败，0 项阻塞。

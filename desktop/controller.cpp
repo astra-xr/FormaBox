@@ -70,6 +70,11 @@ Controller::Controller(const QString &taskDirectory, QObject *parent)
  connect(&worker,&QProcess::readyReadStandardOutput,this,[this]{buffer+=worker.readAllStandardOutput();int n;while((n=buffer.indexOf('\n'))>=0){auto line=buffer.left(n);buffer.remove(0,n+1);processLine(line);}});
  connect(&worker,&QProcess::readyReadStandardError,this,[this]{worker.readAllStandardError();});
  connect(&worker,&QProcess::finished,this,&Controller::finalize);
+ cancelDeadline.setSingleShot(true);
+ connect(&cancelDeadline, &QTimer::timeout, this, [this] {
+  cancelTimedOut = true;
+  worker.killTree();
+ });
  connect(&worker,&QProcess::errorOccurred,this,[this](QProcess::ProcessError e){
   if(e==QProcess::FailedToStart && active>=0)
    finishJob({{"state","失败"},{"message",worker.errorString()},{"errorCode","process_start_failed"}});
@@ -84,6 +89,12 @@ Controller::Controller(const QString &taskDirectory, QObject *parent)
  connect(&previews, &PreviewService::renamePreviewReady, this, &Controller::renamePreviewReady);
  connect(&previews, &PreviewService::studioPreviewReady, this, &Controller::studioPreviewReady);
  QTimer::singleShot(0,this,&Controller::reload);
+}
+Controller::~Controller(){
+ cancelDeadline.stop();
+ worker.disconnect(this);
+ worker.stop();
+ inspection.stop();
 }
 QString Controller::outputDefault()const{return QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).filePath("Omnora Output");}
 bool Controller::systemDark()const{return QGuiApplication::styleHints()->colorScheme()==Qt::ColorScheme::Dark;}
@@ -390,6 +401,7 @@ void Controller::startNext(){
  active=request.index;
  activeRequest=request.json;
  outcome={};
+ cancelTimedOut=false;
  protocolError.clear();
  buffer.clear();
  temp=std::make_unique<QTemporaryDir>();
@@ -401,7 +413,7 @@ void Controller::startNext(){
  activeRequest.insert(WorkerProtocol::versionField, WorkerProtocol::version);
  configure(worker);
  worker.setArguments({"-B","-m","formabox","run","--request","-"});
- worker.start();
+ worker.startManaged();
 }
 void Controller::processLine(QByteArray line){
  if(active<0||!protocolError.isEmpty()||line.trimmed().isEmpty())return;
@@ -439,6 +451,15 @@ void Controller::finalize(int code,QProcess::ExitStatus exitStatus){
    return;
   }
  }
+ if(cancelTimedOut){
+  finishJob({{"state","已取消"},{"message","取消等待超时，已终止工作进程"},{"errorCode","cancel_timeout"}});
+  return;
+ }
+ if(exitStatus==QProcess::CrashExit){
+  finishJob({{"state","失败"},{"message",QStringLiteral("工作进程崩溃（退出码 %1）").arg(code)},
+             {"errorCode","process_crashed"}});
+  return;
+ }
  if(!protocolError.isEmpty()){
   finishJob({{"state","失败"},{"message",protocolError},{"errorCode","protocol_error"}});
   return;
@@ -473,6 +494,7 @@ void Controller::finalize(int code,QProcess::ExitStatus exitStatus){
  finishJob({{"state","失败"},{"message",QStringLiteral("工作进程异常退出 (%1)").arg(code)},{"errorCode","process_exit_failed"}});
 }
 void Controller::finishJob(QVariantMap values){
+ cancelDeadline.stop();
  auto request = std::exchange(activeRequest, {});
  request.remove("cancel");
  const bool canResume = !batchSession(request).isEmpty();
@@ -490,11 +512,12 @@ void Controller::finishJob(QVariantMap values){
 }
 void Controller::cancel(int index) {
  if (index == active && temp) {
-  if (!outcome.isEmpty()) return;
+  if (!outcome.isEmpty() || cancelDeadline.isActive()) return;
   QFile flag(temp->filePath("cancel"));
   if (flag.open(QIODevice::WriteOnly)) {
    flag.close();
    update(index, {{"message", "已请求取消，等待安全退出"}});
+   cancelDeadline.start(5000);
   } else {
    setStatus(QStringLiteral("无法请求取消：") + flag.errorString());
   }

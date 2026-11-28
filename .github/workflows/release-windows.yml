@@ -68,6 +68,23 @@ jobs:
           $env:FORMABOX_TEST_AUDIO = (Resolve-Path 'build/engine-sources/speech-test.wav').Path
           $env:FORMABOX_TEST_MODEL = (Resolve-Path 'build/engine-sources/Whisper-Multilingual-Tiny.bin').Path
           ./scripts/test-windows-installer.ps1 -Setup $setup.FullName -ExpectBundledEngines
+      - name: Verify upgrades and rollback from 0.9.0 and 0.9.3
+        run: |
+          $setup = (Get-ChildItem build/installers -Filter '*-Full-Setup.exe' -File).FullName
+          $fixtures = New-Item -ItemType Directory -Force -Path build/upgrade-fixtures
+          $legacy = @{
+            '0.9.0' = @('FormaBox-0.9.0-Windows-x64-Full-Setup.exe', '4a071286003863138fca327aaf6a88e77fedfbaab8c8ca581b1837b4f63ed4b1')
+            '0.9.3' = @('Omnora-0.9.3-Windows-x64-Full-Setup.exe', '15612f4b40298d56a88994cd3bc08c394104fd8115de59e93852113430b4f1a9')
+          }
+          foreach ($version in @('0.9.0','0.9.3')) {
+            $name, $digest = $legacy[$version]
+            $previous = Join-Path $fixtures.FullName $name
+            curl.exe --fail --location --retry 3 --output $previous "https://github.com/astra-xr/Omnora/releases/download/v$version/$name"
+            if ($LASTEXITCODE -or (Get-FileHash -LiteralPath $previous).Hash -ne $digest) {
+              throw "Invalid published installer fixture $version"
+            }
+            ./scripts/test-windows-upgrade.ps1 -Setup $setup -PreviousSetup $previous -PreviousVersion $version
+          }
       - name: Retain installer when validation fails
         if: failure()
         uses: actions/upload-artifact@v4

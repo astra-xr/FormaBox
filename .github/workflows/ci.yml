@@ -68,7 +68,8 @@ jobs:
           $setup = Join-Path $fixture.Parent.FullName 'Omnora-installer-check.exe'
           $icon = (Resolve-Path 'desktop/assets/formabox.ico').Path
           $version = (Select-String -LiteralPath CMakeLists.txt -Pattern '^project\(Omnora VERSION (\d+\.\d+\.\d+) ').Matches[0].Groups[1].Value
-          & $compiler /INPUTCHARSET UTF8 /WX "/DSETUP_EXE=$setup" "/DFORMABOX_VERSION=$version" "/DPAYLOAD=$($fixture.FullName)" "/DUNINSTALL_LIST=$uninstall" "/DFORMABOX_ICON=$icon" packaging/windows/installer.nsi
+          $transaction = (Resolve-Path build/desktop/installer/Release/OmnoraInstallTransaction.exe).Path
+          & $compiler /INPUTCHARSET UTF8 /WX "/DTRANSACTION_EXE=$transaction" "/DSETUP_EXE=$setup" "/DFORMABOX_VERSION=$version" "/DPAYLOAD=$($fixture.FullName)" "/DUNINSTALL_LIST=$uninstall" "/DFORMABOX_ICON=$icon" packaging/windows/installer.nsi
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           if ((Get-Item -LiteralPath $setup).VersionInfo.ProductName -ne '万象（Omnora）') {
               throw 'Installer metadata does not match the application name'

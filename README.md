@@ -2,14 +2,14 @@
 
 万象是一个免费、开源的 Windows 文件工具箱。可以在一个界面里做图片转换与压缩、PDF 合并与拆分、文本整理、批量文件处理，也可以把操作串成工作流。文件在本机处理，无需注册账号。
 
-**当前版本为 0.9.3（Windows 完整预览版）。** 支持 64 位 Windows 10（1809 及以上）和 Windows 11。
+**当前版本为 0.9.4（Windows 完整预览版）。** 支持 64 位 Windows 10（1809 及以上）和 Windows 11。
 
-0.9.3 将任务历史和执行记录保存到本地 SQLite。程序中断后，重新打开万象可以查看任务状态、重试失败的普通任务，并恢复已完成文件提交的产物记录。
+0.9.4 支持在原安装目录覆盖升级。新版启动校验通过后才确认安装，替换失败时恢复旧程序文件。任务取消超时或退出时，会回收该任务所属的 Windows 工作进程及子进程。
 
 ## 下载安装
 
-1. 在 [GitHub Release](https://github.com/astra-xr/Omnora/releases/tag/v0.9.3) 下载 [Windows x64 完整安装包](https://github.com/astra-xr/Omnora/releases/download/v0.9.3/Omnora-0.9.3-Windows-x64-Full-Setup.exe)。
-2. 双击安装包，按中文向导选择目录并安装。升级时需先卸载旧版。
+1. 在 [GitHub Release](https://github.com/astra-xr/Omnora/releases/tag/v0.9.4) 下载 [Windows x64 完整安装包](https://github.com/astra-xr/Omnora/releases/download/v0.9.4/Omnora-0.9.4-Windows-x64-Full-Setup.exe)。
+2. 关闭正在运行的万象，再运行中文安装向导。升级时沿用当前安装目录，设置、预设和任务历史继续保存在原位置。安装日志位于 `%LOCALAPPDATA%\Omnora\installer.log`。
 3. 安装完成后，从桌面或开始菜单打开「万象」。卸载入口在 Windows「设置 → 应用」。
 
 **完整包内置 Qt、Python、FFmpeg 8.1.2、Tesseract 5.5.4（英文和简体中文语言包）、LibreOffice 26.8.3.1 和 whisper.cpp。** 装一次万象即可使用音视频转换、图片和扫描 PDF OCR、Word / Excel / PPT 转 PDF，无需单独安装或手动配置引擎。

@@ -13,6 +13,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
 $recipe = Join-Path $root 'packaging/windows'
+$transaction = (Resolve-Path -LiteralPath (Join-Path $BuildDirectory 'installer/Release/OmnoraInstallTransaction.exe')).Path
 $versionMatch = Select-String -Path (Join-Path $root 'CMakeLists.txt') -Pattern '^project\(Omnora VERSION (\d+\.\d+\.\d+) '
 $version = $versionMatch.Matches[0].Groups[1].Value
 $output = (New-Item -ItemType Directory -Path $OutputDirectory -Force).FullName
@@ -103,6 +104,7 @@ try {
             ('!define FORMABOX_VERSION "{0}"' -f $version)
             ('!define PAYLOAD "{0}"' -f $payload)
             ('!define UNINSTALL_LIST "{0}"' -f $uninstallList)
+            ('!define TRANSACTION_EXE "{0}"' -f $transaction)
             ('!define FORMABOX_ICON "{0}"' -f $icon)
             ('!include /CHARSET=UTF8 "{0}"' -f $installerScript)
         )
@@ -111,7 +113,7 @@ try {
         Write-Host "Prepared $script"
         return
     }
-    & $MakeNsis /INPUTCHARSET UTF8 /WX "/DSETUP_EXE=$setup" "/DFORMABOX_VERSION=$version" "/DPAYLOAD=$payload" "/DUNINSTALL_LIST=$uninstallList" "/DFORMABOX_ICON=$icon" $installerScript
+    & $MakeNsis /INPUTCHARSET UTF8 /WX "/DSETUP_EXE=$setup" "/DFORMABOX_VERSION=$version" "/DPAYLOAD=$payload" "/DUNINSTALL_LIST=$uninstallList" "/DFORMABOX_ICON=$icon" "/DTRANSACTION_EXE=$transaction" $installerScript
     if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $setup -PathType Leaf)) {
         throw 'NSIS installer compilation failed'
     }

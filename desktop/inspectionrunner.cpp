@@ -10,7 +10,7 @@ InspectionRunner::InspectionRunner(ConfigureProcess configureProcess)
     m_timeout.setSingleShot(true);
     connect(&m_timeout, &QTimer::timeout, this, [this] {
         m_timedOut = true;
-        m_process.kill();
+        m_process.killTree();
     });
     connect(&m_process, &QProcess::started, this, [this] {
         if (!m_request.isEmpty())
@@ -35,10 +35,7 @@ void InspectionRunner::stop()
     m_timeout.stop();
     m_command.clear();
     m_request = {};
-    if (m_process.state() != QProcess::NotRunning) {
-        m_process.kill();
-        m_process.waitForFinished();
-    }
+    m_process.stop();
 }
 
 void InspectionRunner::start(const QString &command, int timeout, const QJsonObject &request,
@@ -55,7 +52,7 @@ void InspectionRunner::start(const QString &command, int timeout, const QJsonObj
     m_process.setArguments({"-B", "-m", "formabox", command});
     emit busyChanged();
     m_timeout.start(timeout);
-    m_process.start();
+    m_process.startManaged();
 }
 
 void InspectionRunner::finish(int code, QProcess::ExitStatus status)
@@ -69,6 +66,8 @@ void InspectionRunner::finish(int code, QProcess::ExitStatus status)
     auto error = reply.value("error").toString();
     if (m_timedOut)
         error = QStringLiteral("操作超时");
+    else if (code == -1 && m_process.state() == QProcess::NotRunning && reply.isEmpty())
+        error = m_process.errorString();
     else if (!WorkerProtocol::supportsVersion(reply))
         error = QStringLiteral("工作进程协议版本不兼容");
     else if (status != QProcess::NormalExit || (error.isEmpty() && (code != 0 || result.isUndefined())))

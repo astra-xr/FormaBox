@@ -1,7 +1,7 @@
 #pragma once
 
 #include <QObject>
-#include <QProcess>
+#include "workerprocess.h"
 #include <QVariant>
 #include <functional>
 
@@ -28,7 +28,7 @@ private:
     void schedulePendingReload();
 
     const ConfigureProcess m_configureProcess;
-    QProcess m_catalogue;
+    WorkerProcess m_catalogue;
     QVariantList m_tools;
     bool m_reloadPending = false;
 };
