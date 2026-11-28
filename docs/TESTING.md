@@ -4,7 +4,7 @@
 
 本机 Windows x64 使用 Qt 6.8.3 和 MSVC 2022 编译。覆盖项目目录启动入口后，`Omnora.exe --verify-install` 和 `Omnora.exe --verify-runtime` 均返回 0。桌面回归包含真实 Python 子进程的强制终止、自然退出、析构回收和多进程组隔离测试。73 项 pytest 通过。安装事务在含中文和空格的样本目录模拟文件锁，确认部分替换失败后恢复原文件，解除锁定后可重试，并保留用户文件。
 
-发布工作流依次验证完整安装包、0.9.0 与 0.9.3 的真实覆盖升级及回滚。以对应 GitHub Actions 运行和 Release 为发布依据。
+[发布流水线](https://github.com/astra-xr/Omnora/actions/runs/46137967497)通过 73 项 pytest，完整安装包启动后实跑 79 项工具，0 项阻塞，0 项失败。用发布的 0.9.0 和 0.9.3 安装包分别验证文件锁回滚、旧版启动、解除锁定后重试、用户数据保留和卸载。安装包与 SHA-256 校验文件已发布到 [v0.9.4](https://github.com/astra-xr/Omnora/releases/tag/v0.9.4)。
 
 ## 0.9.3 Windows 完整预览版
 
