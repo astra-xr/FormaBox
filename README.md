@@ -2,11 +2,13 @@
 
 万象是一个免费、开源的 Windows 文件工具箱。可以在一个界面里做图片转换与压缩、PDF 合并与拆分、文本整理、批量文件处理，也可以把操作串成工作流。文件在本机处理，无需注册账号。
 
-**当前版本为 0.9.0（Windows 完整预览版）。** 支持 64 位 Windows 10（1809 及以上）和 Windows 11。
+**当前版本为 0.9.3（Windows 完整预览版）。** 支持 64 位 Windows 10（1809 及以上）和 Windows 11。
+
+0.9.3 将任务历史和执行记录保存到本地 SQLite。程序中断后，重新打开万象可以查看任务状态、重试失败的普通任务，并恢复已完成文件提交的产物记录。
 
 ## 下载安装
 
-1. 在 [GitHub Release](https://github.com/astra-xr/Omnora/releases/tag/v0.9.0) 下载 [Windows x64 完整安装包](https://github.com/astra-xr/Omnora/releases/download/v0.9.0/FormaBox-0.9.0-Windows-x64-Full-Setup.exe)。0.9.0 安装包发布于改名前，下载文件仍使用原名。
+1. 在 [GitHub Release](https://github.com/astra-xr/Omnora/releases/tag/v0.9.3) 下载 [Windows x64 完整安装包](https://github.com/astra-xr/Omnora/releases/download/v0.9.3/Omnora-0.9.3-Windows-x64-Full-Setup.exe)。
 2. 双击安装包，按中文向导选择目录并安装。升级时需先卸载旧版。
 3. 安装完成后，从桌面或开始菜单打开「万象」。卸载入口在 Windows「设置 → 应用」。
 

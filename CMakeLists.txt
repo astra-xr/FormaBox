@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(Omnora VERSION 0.9.0 LANGUAGES CXX)
+project(Omnora VERSION 0.9.3 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(WIN32)
