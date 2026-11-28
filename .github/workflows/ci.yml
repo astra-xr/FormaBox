@@ -41,6 +41,11 @@ jobs:
           $stage = Join-Path $env:GITHUB_WORKSPACE 'build/desktop-check'
           cmake --install build/desktop --config Release --prefix (Join-Path $stage 'dist')
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          foreach ($relative in @('dist/Qt6Sql.dll', 'dist/plugins/sqldrivers/qsqlite.dll')) {
+              if (!(Test-Path -LiteralPath (Join-Path $stage $relative) -PathType Leaf)) {
+                  throw "Missing SQLite runtime file: $relative"
+              }
+          }
           Copy-Item -LiteralPath build/desktop/launcher/Release/Omnora.exe -Destination build/desktop-check/Omnora.exe
           $env:FORMABOX_PYTHON = (Get-Command python).Source
           $env:QT_QUICK_BACKEND = 'software'
@@ -74,6 +79,8 @@ jobs:
           path: |
             build/desktop-check/Omnora.exe
             build/desktop-check/dist/Omnora.exe
+            build/desktop-check/dist/Qt6Sql.dll
+            build/desktop-check/dist/plugins/sqldrivers/qsqlite.dll
           if-no-files-found: error
           retention-days: 3
       - name: Prepare verified engine and speech fixtures

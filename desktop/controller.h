@@ -11,12 +11,14 @@
 #include "engineregistry.h"
 #include "inspectionrunner.h"
 #include "previewservice.h"
+#include "taskstore.h"
 #include "toolregistry.h"
 class Controller final : public QObject {
  Q_OBJECT
  Q_PROPERTY(QVariantList tools READ tools NOTIFY toolsChanged)
  Q_PROPERTY(QVariantList jobs READ jobs NOTIFY jobsChanged)
  Q_PROPERTY(QString status READ status NOTIFY statusChanged)
+ Q_PROPERTY(QString historyWarning READ historyWarning NOTIFY historyWarningChanged)
  Q_PROPERTY(bool busy READ busy NOTIFY jobsChanged)
  Q_PROPERTY(QString outputDefault READ outputDefault CONSTANT)
  Q_PROPERTY(bool systemDark READ systemDark NOTIFY systemThemeChanged)
@@ -26,10 +28,11 @@ class Controller final : public QObject {
  Q_PROPERTY(bool hasBundledEngines READ hasBundledEngines CONSTANT)
  Q_PROPERTY(QVariantList engineOptions READ engineOptions CONSTANT)
 public:
- explicit Controller(QObject *parent=nullptr);
+ explicit Controller(const QString &taskDirectory, QObject *parent=nullptr);
  QVariantList tools() const {return toolRegistry.tools();}
  QVariantList jobs() const {return m_jobs;}
  QString status() const {return m_status;}
+ QString historyWarning() const { return m_historyWarning; }
  bool busy() const {return active>=0 || !pending.isEmpty();}
  QString outputDefault() const;
  bool systemDark() const;
@@ -72,6 +75,7 @@ public:
  Q_INVOKABLE void clearHistory();
 signals:
  void toolsChanged(); void jobsChanged(); void statusChanged(); void systemThemeChanged();
+ void historyWarningChanged();
  void inspectionChanged();
  void presetsChanged();
  void favoritesChanged();
@@ -86,6 +90,8 @@ private:
  ToolRegistry toolRegistry;
  InspectionRunner inspection;
  PreviewService previews;
+ TaskStore taskStore;
+ QString m_historyWarning;
  QVariantList m_jobs; QString m_status; QProcess worker; QByteArray buffer; QQueue<Request> pending; int active=-1;
  QVariantList m_presets;
  QStringList m_favorites;
@@ -100,5 +106,9 @@ private:
  bool saveEngines = false;
  void finishEngineCheck(const QJsonValue &result, QString error);
  void finishJob(QVariantMap values);
- void setStatus(QString); void startNext(); void enqueue(QJsonObject,QString); void update(int,QVariantMap); void processLine(QByteArray); void finalize(int,QProcess::ExitStatus); void configure(QProcess&, const QVariantMap *overrides = nullptr); void loadHistory(); void saveHistory();
+ bool storeTask(const QVariantMap &row, const QJsonObject &request, bool inFlight);
+ void reportHistoryError(const QString &error);
+ void enqueue(QJsonObject request, QString title, int existing = -1);
+ void update(int index, QVariantMap values, const QJsonObject *request = nullptr, bool inFlight = false);
+ void setStatus(QString); void startNext(); void processLine(QByteArray); void finalize(int,QProcess::ExitStatus); void configure(QProcess&, const QVariantMap *overrides = nullptr); void loadHistory();
 };

@@ -788,6 +788,13 @@ ApplicationWindow {
                     }
                 }
             }
+            Label {
+                visible: backend.historyWarning.length > 0
+                text: backend.historyWarning
+                color: root.muted
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+            }
             Label { text: root.workflowNotice || backend.status; color: root.muted; Layout.fillWidth: true; elide: Text.ElideRight }
         }
         Panel { Layout.preferredWidth: 310; Layout.fillHeight: true

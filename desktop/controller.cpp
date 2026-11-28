@@ -18,9 +18,9 @@
 #include <QSaveFile>
 #include <QStyleHints>
 #include <QTimer>
-#include <QUuid>
 #include <QRegularExpression>
 #include <algorithm>
+#include <utility>
 
 namespace {
 bool canOpenResult(const QFileInfo &file) {
@@ -50,11 +50,11 @@ QString batchSession(const QJsonObject &request) {
 }
 }
 
-Controller::Controller(QObject *parent)
+Controller::Controller(const QString &taskDirectory, QObject *parent)
  : QObject(parent), engineRegistry(QCoreApplication::applicationDirPath()),
    toolRegistry([this](QProcess &process) { configure(process); }),
    inspection([this](QProcess &process, const QVariantMap *paths) { configure(process, paths); }),
-   previews(inspection) {
+   previews(inspection), taskStore(taskDirectory) {
  loadHistory();
  m_presets = QSettings().value("tools/presets").toList();
  m_favorites = QSettings().value("tools/favorites").toStringList();
@@ -314,12 +314,13 @@ QString Controller::savePdfCompression(const QString &output) {
  if (!saved.error.isEmpty()) return saved.error;
 
  const QFileInfo file(saved.path);
- m_jobs.append(QVariantMap{{"title", QStringLiteral("PDF 页面工作台")},
+ const QVariantMap row{{"taskId", TaskStore::newId()}, {"title", QStringLiteral("PDF 页面工作台")},
                           {"state", QStringLiteral("完成")}, {"progress", 1.0},
                           {"message", QStringLiteral("已保存预览 · %1 KiB").arg(file.size() / 1024.0, 0, 'f', 1)},
                           {"directory", file.absolutePath()},
-                          {"outputs", QVariantList{resultRow(file, saved.details)}}});
- saveHistory();
+                          {"outputs", QVariantList{resultRow(file, saved.details)}}};
+ m_jobs.append(row);
+ storeTask(row, {}, false);
  emit jobsChanged();
  return {};
 }
@@ -349,28 +350,39 @@ void Controller::submit(QString tool,QVariantList inputs,QVariantMap params,QStr
  enqueue(QJsonObject::fromVariantMap({{"tool",tool},{"inputs",inputs},{"params",params},{"output",output}}),title);
 }
 void Controller::submitWorkflow(QVariantList steps,QVariantList inputs,QString output){if(steps.isEmpty()||inputs.isEmpty()||output.trimmed().isEmpty()){setStatus(QStringLiteral("请提供工作流、输入及输出目录"));return;}enqueue(QJsonObject::fromVariantMap({{"steps",steps},{"inputs",inputs},{"output",output}}),QStringLiteral("工作流 (%1 步)").arg(steps.size()));}
-void Controller::enqueue(QJsonObject json, QString title) {
- if (json.value("tool").toString() == "folder.batch") {
-  if (batchSession(json).isEmpty()) {
-   auto params = json.value("params").toObject();
-   params["session"] = QUuid::createUuid().toString(QUuid::Id128);
-   json["params"] = params;
-  }
-  QSettings settings;
-  settings.setValue("resume/" + batchSession(json), json.toVariantMap());
-  settings.sync();
-  if (settings.status() != QSettings::NoError) {
-   setStatus(QStringLiteral("无法记录续跑任务"));
-   return;
-  }
+void Controller::enqueue(QJsonObject json, QString title, int existing) {
+ if (json.value("tool").toString() == "folder.batch" && batchSession(json).isEmpty()) {
+  auto params = json.value("params").toObject();
+  params["session"] = TaskStore::newId();
+  json["params"] = params;
  }
- const int index = m_jobs.size();
- m_jobs.append(QVariantMap{{"title", title}, {"state", "等待"}, {"progress", 0.0}, {"message", ""}, {"directory", ""}});
+ const bool retrying = existing >= 0;
+ const auto id = retrying ? m_jobs.at(existing).toMap().value("taskId").toString() : TaskStore::newId();
+ const QVariantMap row{{"taskId", id}, {"title", title}, {"state", "等待"}, {"progress", 0.0},
+                       {"message", ""}, {"directory", ""}};
+ if (!storeTask(row, json, true) && retrying && taskStore.available())
+  return;
+ const int index = retrying ? existing : m_jobs.size();
+ if (retrying) {
+  retryRequests.remove(index);
+  m_jobs[index] = row;
+ } else {
+  m_jobs.append(row);
+ }
  pending.enqueue({index, std::move(json)});
  emit jobsChanged();
  startNext();
 }
-void Controller::update(int i,QVariantMap values){if(i<0||i>=m_jobs.size())return;auto row=m_jobs[i].toMap();for(auto it=values.begin();it!=values.end();++it)row.insert(it.key(),it.value());m_jobs[i]=row;emit jobsChanged();}
+void Controller::update(int index, QVariantMap values, const QJsonObject *request, bool inFlight) {
+ if (index < 0 || index >= m_jobs.size()) return;
+ auto row = m_jobs.at(index).toMap();
+ for (auto it = values.cbegin(); it != values.cend(); ++it)
+  row.insert(it.key(), it.value());
+ if (request)
+  storeTask(row, *request, inFlight);
+ m_jobs[index] = row;
+ emit jobsChanged();
+}
 void Controller::startNext(){
  if(active>=0||pending.isEmpty())return;
  auto request=pending.dequeue();
@@ -388,7 +400,7 @@ void Controller::startNext(){
  activeRequest.insert(WorkerProtocol::versionField, WorkerProtocol::version);
  configure(worker);
  worker.setArguments({"-B","-m","formabox","run","--request","-"});
- update(active,{{"state","运行中"},{"progress",-1.0},{"message","准备处理"}});
+ update(active,{{"state","运行中"},{"progress",-1.0},{"message","准备处理"}}, &activeRequest, true);
  worker.start();
 }
 void Controller::processLine(QByteArray line){
@@ -454,36 +466,49 @@ void Controller::finalize(int code,QProcess::ExitStatus exitStatus){
  finishJob({{"state","失败"},{"message",QStringLiteral("工作进程异常退出 (%1)").arg(code)},{"errorCode","process_exit_failed"}});
 }
 void Controller::finishJob(QVariantMap values){
- const auto usesPassword=[](const QJsonObject &request){return request.value("params").toObject().contains("password");};
- bool sensitive=usesPassword(activeRequest);
- for(const auto &step:activeRequest.value("steps").toArray())sensitive=sensitive||usesPassword(step.toObject());
- const auto session = batchSession(activeRequest);
+ auto request = std::exchange(activeRequest, {});
+ request.remove("cancel");
+ const bool canResume = !batchSession(request).isEmpty();
  const auto state = values.value("state").toString();
- if (!session.isEmpty() && state == "完成") {
-  QSettings settings;
-  settings.remove("resume/" + session);
-  settings.sync();
- }
- if (!sensitive && (state == "失败" || (!session.isEmpty() && state == "已取消"))) {
-  activeRequest.remove("cancel");
-  retryRequests.insert(active,activeRequest);
+ if (!TaskStore::hasPassword(request) && (state == "失败" || (canResume && state == "已取消"))) {
+  retryRequests.insert(active, request);
   values.insert("canRetry",true);
-  values.insert("canResume", !session.isEmpty());
+  values.insert("canResume", canResume);
  }
  const int finished=active;
  active=-1;
- activeRequest={};
  temp.reset();
- update(finished,values);
- saveHistory();
+ update(finished,values,&request);
  QTimer::singleShot(0,this,&Controller::startNext);
 }
-void Controller::cancel(int index){if(index==active&&temp){if(!outcome.isEmpty())return;QFile f(temp->filePath("cancel"));if(f.open(QIODevice::WriteOnly)){f.close();update(index,{{"message","已请求取消，等待安全退出"}});}else setStatus(QStringLiteral("无法请求取消：")+f.errorString());return;}for(int i=0;i<pending.size();++i)if(pending[i].index==index){pending.removeAt(i);update(index,{{"state","已取消"},{"message","取消排队"}});saveHistory();return;}}
+void Controller::cancel(int index) {
+ if (index == active && temp) {
+  if (!outcome.isEmpty()) return;
+  QFile flag(temp->filePath("cancel"));
+  if (flag.open(QIODevice::WriteOnly)) {
+   flag.close();
+   update(index, {{"message", "已请求取消，等待安全退出"}});
+  } else {
+   setStatus(QStringLiteral("无法请求取消：") + flag.errorString());
+  }
+  return;
+ }
+ for (qsizetype i = 0; i < pending.size(); ++i) {
+  if (pending.at(i).index != index) continue;
+  const auto request = pending.takeAt(i).json;
+  QVariantMap row{{"state", "已取消"}, {"message", "取消排队"}, {"errorCode", "cancelled"}};
+  if (!batchSession(request).isEmpty() && !TaskStore::hasPassword(request)) {
+   retryRequests.insert(index, request);
+   row.insert("canRetry", true);
+   row.insert("canResume", true);
+  }
+  update(index, row, &request);
+  return;
+ }
+}
 void Controller::retry(int index){
  if(!retryRequests.contains(index))return;
- auto request=retryRequests.take(index);
- update(index,{{"canRetry",false}});
- enqueue(request,m_jobs.at(index).toMap().value("title").toString());
+ enqueue(retryRequests.value(index),m_jobs.at(index).toMap().value("title").toString(),index);
 }
 QString Controller::readWorkflow(const QUrl &url){
  QFile file(localPath(url));
@@ -502,22 +527,57 @@ bool Controller::writeWorkflow(const QUrl &url,const QString &text){
 void Controller::openFolder(QString path){if(QFileInfo(path).isDir())QDesktopServices::openUrl(QUrl::fromLocalFile(path));}
 void Controller::loadHistory() {
  QSettings settings;
- m_jobs = settings.value("jobs").toList();
+ QList<TaskStore::Record> legacy;
+ for (const auto &value : settings.value("jobs").toList()) {
+  auto row = value.toMap();
+  if (row.isEmpty()) continue;
+  row["taskId"] = TaskStore::newId();
+  legacy.append({row, {}});
+ }
  settings.beginGroup("resume");
  for (const auto &key : settings.childKeys()) {
   const auto request = QJsonObject::fromVariantMap(settings.value(key).toMap());
   if (batchSession(request) != key || request.value("output").toString().isEmpty()) continue;
-  retryRequests.insert(m_jobs.size(), request);
-  m_jobs.append(QVariantMap{{"title", "文件夹批处理"}, {"state", "可继续"}, {"progress", 0.0},
-                           {"message", "从已保存的结果接着处理"}, {"canResume", true}, {"canRetry", true}});
+  legacy.append({{{"taskId", TaskStore::newId()}, {"title", "文件夹批处理"}, {"state", "可继续"}, {"progress", 0.0},
+                  {"message", "从已保存的结果接着处理"}, {"canRetry", true}}, request});
+ }
+ const auto rows = taskStore.migrate(legacy) ? taskStore.load() : legacy;
+ if (!taskStore.error().isEmpty())
+  reportHistoryError(taskStore.error());
+ for (const auto &record : rows) {
+  auto row = record.view;
+  const bool retryable = !record.request.isEmpty() && !TaskStore::hasPassword(record.request);
+  row.insert("canRetry", retryable);
+  row.insert("canResume", retryable && !batchSession(record.request).isEmpty());
+  if (retryable)
+   retryRequests.insert(m_jobs.size(), record.request);
+  m_jobs.append(row);
  }
 }
-void Controller::saveHistory(){QVariantList history;for(auto v:m_jobs){auto m=v.toMap();m.remove("canRetry");if(m.value("state").toString()!="等待"&&m.value("state").toString()!="运行中")history.append(m);}while(history.size()>100)history.removeFirst();QSettings s;s.setValue("jobs",history);}
+void Controller::reportHistoryError(const QString &error) {
+ const auto message = QStringLiteral("任务历史保存或读取失败：") + error;
+ if (m_historyWarning == message) return;
+ m_historyWarning = message;
+ emit historyWarningChanged();
+}
+bool Controller::storeTask(const QVariantMap &row, const QJsonObject &request, bool inFlight) {
+ if (taskStore.save({row, request}, inFlight)) return true;
+ reportHistoryError(taskStore.error());
+ return false;
+}
 void Controller::clearHistory(){
  if(busy())return;
+ if (!taskStore.clearHistory()) {
+  reportHistoryError(taskStore.error());
+  return;
+ }
+ QSettings settings;
+ settings.remove("jobs");
+ settings.remove("resume");
+ settings.sync();
+ if (settings.status() != QSettings::NoError)
+  reportHistoryError(QStringLiteral("无法清除旧版历史备份"));
  m_jobs.clear();
  retryRequests.clear();
- QSettings().remove("resume");
- saveHistory();
  emit jobsChanged();
 }

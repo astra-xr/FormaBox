@@ -18,7 +18,7 @@ if(WIN32)
         target_link_options(OmnoraLauncher PRIVATE -municode -static)
     endif()
 endif()
-find_package(Qt6 6.5 REQUIRED COMPONENTS Quick QuickControls2)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Quick QuickControls2 Sql)
 qt_standard_project_setup(REQUIRES 6.5)
 qt_add_executable(Omnora WIN32
     desktop/main.cpp
@@ -26,6 +26,7 @@ qt_add_executable(Omnora WIN32
     desktop/engineregistry.cpp desktop/engineregistry.h
     desktop/inspectionrunner.cpp desktop/inspectionrunner.h
     desktop/previewservice.cpp desktop/previewservice.h desktop/outputpath.h
+    desktop/taskstore.cpp desktop/taskstore.h
     desktop/toolregistry.cpp desktop/toolregistry.h)
 set(branding_dir "${CMAKE_CURRENT_SOURCE_DIR}/desktop/assets")
 qt_add_resources(Omnora "branding"
@@ -49,7 +50,7 @@ foreach(qml IN LISTS omnora_qml)
 endforeach()
 list(TRANSFORM omnora_qml PREPEND "desktop/qml/")
 qt_add_qml_module(Omnora URI Omnora VERSION 1.0 QML_FILES ${omnora_qml})
-target_link_libraries(Omnora PRIVATE Qt6::Quick Qt6::QuickControls2)
+target_link_libraries(Omnora PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Sql)
 target_compile_definitions(Omnora PRIVATE OMNORA_VERSION="${PROJECT_VERSION}")
 if(MSVC)
     target_compile_options(Omnora PRIVATE /utf-8)

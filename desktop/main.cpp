@@ -6,6 +6,7 @@
 #include <QGuiApplication>
 #include <QIcon>
 #include <QImage>
+#include <QJsonArray>
 #include <QJSValue>
 #include <QMouseEvent>
 #include <QPainter>
@@ -17,6 +18,7 @@
 #include <QQuickWindow>
 #include <QSet>
 #include <QSettings>
+#include <QStandardPaths>
 #include <QTimer>
 #include <functional>
 #include "controller.h"
@@ -582,6 +584,85 @@ static bool verifyWorkerFailure(Controller &controller)
            job.value("canRetry").toBool() && !QFileInfo(fixture.filePath("out")).exists();
 }
 
+static bool verifyTaskStorage(const QString &directory)
+{
+    const QDir root(directory);
+    const auto batch = TaskStore::newId();
+    const QJsonObject request{{"tool", "image.convert"}, {"inputs", QJsonArray{root.filePath("missing.png")}},
+                              {"output", root.filePath("out")}};
+    QSettings settings;
+    settings.setValue("jobs", QVariantList{QVariantMap{{"title", "Legacy result"}, {"state", QStringLiteral("完成")}}});
+    settings.setValue("resume/" + batch,
+                      QVariantMap{{"tool", "folder.batch"}, {"inputs", QVariantList{directory}},
+                                  {"output", root.filePath("batch")}, {"params", QVariantMap{{"session", batch}}}});
+    settings.sync();
+    QString legacyId;
+    {
+        Controller migrated(directory);
+        const auto jobs = migrated.jobs();
+        if (!migrated.historyWarning().isEmpty() || jobs.size() != 2 ||
+            jobs.first().toMap().value("title") != "Legacy result" || !jobs.last().toMap().value("canResume").toBool())
+            return false;
+        legacyId = jobs.first().toMap().value("taskId").toString();
+        if (legacyId.isEmpty())
+            return false;
+    }
+    const auto interruptedId = TaskStore::newId();
+    const auto protectedId = TaskStore::newId();
+    const QString password = "test-only-password-do-not-store-3bb93f";
+    {
+        TaskStore running(directory);
+        const TaskStore::Record job{{{"taskId", interruptedId}, {"title", "Active task"},
+                                     {"state", QStringLiteral("运行中")}}, request};
+        const QJsonObject protectedStep{{"tool", "pdf.decrypt"}, {"params", QJsonObject{{"password", password}}}};
+        const QJsonObject protectedRequest{{"steps", QJsonArray{protectedStep}}};
+        const TaskStore::Record queued{{{"taskId", protectedId}, {"title", "Protected task"},
+                                        {"state", QStringLiteral("等待")}, {"message", password}}, protectedRequest};
+        if (!running.save(job, true) || !running.save(queued, true))
+            return false;
+        TaskStore concurrent(directory);
+        if (!concurrent.available() || concurrent.load().size() != 2 || concurrent.save(job, true))
+            return false;
+    }
+    {
+        Controller reopened(directory);
+        const auto jobs = reopened.jobs();
+        if (!reopened.historyWarning().isEmpty() || jobs.size() != 4 ||
+            jobs.first().toMap().value("taskId") != legacyId)
+            return false;
+        const auto ordinary = jobs.at(2).toMap();
+        const auto protectedJob = jobs.at(3).toMap();
+        if (ordinary.value("taskId") != interruptedId || ordinary.value("errorCode") != "interrupted" ||
+            !ordinary.value("canRetry").toBool() || protectedJob.value("taskId") != protectedId ||
+            protectedJob.value("errorCode") != "interrupted" || protectedJob.value("canRetry").toBool())
+            return false;
+        QEventLoop wait;
+        QObject::connect(&reopened, &Controller::jobsChanged, &wait, [&] {
+            if (!reopened.busy()) wait.quit();
+        });
+        QTimer::singleShot(6500, &wait, &QEventLoop::quit);
+        reopened.retry(2);
+        if (reopened.busy()) wait.exec();
+        const auto retried = reopened.jobs().at(2).toMap();
+        if (reopened.busy() || retried.value("taskId") != interruptedId || retried.value("errorCode") != "file_not_found")
+            return false;
+    }
+    QFile database(root.filePath("tasks.sqlite"));
+    if (!database.open(QIODevice::ReadOnly) || database.readAll().contains(password.toUtf8()))
+        return false;
+    database.close();
+    {
+        Controller reopened(directory);
+        if (reopened.jobs().size() != 4 || reopened.jobs().at(2).toMap().value("errorCode") != "file_not_found")
+            return false;
+        reopened.clearHistory();
+        if (!reopened.jobs().isEmpty() || !reopened.historyWarning().isEmpty())
+            return false;
+    }
+    Controller cleared(directory);
+    return cleared.jobs().isEmpty() && cleared.historyWarning().isEmpty();
+}
+
 static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controller &controller)
 {
     if (root->property("title").toString() != QStringLiteral("万象 · Omnora"))
@@ -655,7 +736,7 @@ static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controll
 int main(int argc, char **argv)
 {
     QGuiApplication app(argc, argv);
-    // Keep the existing QSettings keys for presets, history and resumable jobs.
+    // Keep the existing QSettings location for preferences and history migration.
     app.setOrganizationName("FormaBox");
     app.setApplicationName("FormaBox");
     app.setApplicationDisplayName(QStringLiteral("万象 · Omnora"));
@@ -687,8 +768,15 @@ int main(int argc, char **argv)
             return 2;
         QSettings::setDefaultFormat(QSettings::IniFormat);
         QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, verificationSettings->path());
+        if (options.contains("--verify-runtime") && !verifyTaskStorage(verificationSettings->filePath("storage-check"))) {
+            qWarning("Task storage migration, recovery, or password protection failed.");
+            return 3;
+        }
     }
-    Controller controller;
+    const auto localData = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+    const auto taskDirectory = verify ? verificationSettings->filePath("history") :
+                               localData.isEmpty() ? QString{} : QDir(localData).filePath("Omnora");
+    Controller controller(taskDirectory);
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("backend", &controller);
     engine.rootContext()->setContextProperty("launchFiles", launchedFiles);

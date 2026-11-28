@@ -1,5 +1,11 @@
 # 实际测试记录
 
+## 0.9.1 开发中 · Worker 协议 v1
+
+本机 Windows 的 6 项定向 pytest 通过，验证无版本号请求、显式 v1 请求、无效 JSON、未知版本、缺文件、缺引擎、无效参数和取消。用项目启动器运行同步后的 `Omnora.exe --verify-runtime`，退出码为 0。桌面回归验证缺文件时记录 `file_not_found`，保留重试状态，并且未建立输出目录。
+
+[GitHub Windows CI](https://github.com/astra-xr/Omnora/actions/runs/46097470211) 通过桌面验收和 NSIS 模板编译。内置引擎环境执行 `python -m pytest -q -ra tests` 通过 71 项。在暂存目录用已校验的内置引擎执行 `python -X utf8 -B tests/smoke_tools.py`，79 项通过，失败和阻塞均为 0。
+
 ## 0.9.1 开发中 · 预览服务
 
 本机 Windows 的 7 项定向测试通过，覆盖工具清单、批量改名、PDF 缩略图与压缩、证件照及归档预览。下载并校验 Windows CI 产物后更新 `dist/Omnora.exe`，使用项目启动器运行 `Omnora.exe --verify-runtime`，退出码为 0。
