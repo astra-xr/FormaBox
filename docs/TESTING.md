@@ -1,5 +1,11 @@
 # 实际测试记录
 
+## 0.9.3 Windows 完整预览版
+
+本机 Windows x64 使用 Qt 6.8.3 与 MSVC 2022 编译 Release。覆盖项目根目录启动器及 `dist/Omnora.exe` 后，`Omnora.exe --verify-runtime` 退出 0。用现有虚拟环境和引擎运行 `python -m pytest -q -ra tests`，73 项通过。对已部署的 worker 实跑 `python -X utf8 -B tests/smoke_tools.py`，79 项通过，0 项失败，0 项阻塞。
+
+[发布流水线](https://github.com/astra-xr/Omnora/actions/runs/46129440414)在 Windows 上通过 73 项 pytest，生成完整安装包并在含中文与空格的路径中测试安装、应用启动、资源管理器「发送到」、已安装环境的 79 项工具实跑和卸载。已发布为 [v0.9.3 Windows 完整预览版](https://github.com/astra-xr/Omnora/releases/tag/v0.9.3)。后续工作见[维护进度](maintenance/STATUS.md)与[下一步](maintenance/NEXT.md)。
+
 ## 0.9.3 开发中 · 文件提交恢复
 
 Windows 桌面回归覆盖了三种中断结果。文件已提交时，重启会恢复完成状态和产物记录。文件仍在暂存目录时，任务保持中断，待结果实际提交后，下次启动才恢复。文件大小与回执不符时，任务保持中断。常规任务成功入库后会清理内部回执。本机 6 项定向 worker 用例还覆盖了提交前改名失败、重试时保留已有结果，以及旧 CLI 请求兼容。

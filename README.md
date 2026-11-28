@@ -31,6 +31,8 @@ Windows 顶栏把万象标题、工具入口和窗口按钮放在一起。右上
 
 [路线图](ROADMAP.md) · [测试记录](docs/TESTING.md) · [安全边界](docs/SECURITY.md) · [全部发布版本](https://github.com/astra-xr/Omnora/releases)
 
+**开发维护** · [接手项目](docs/maintenance/README.md) · [当前进度](docs/maintenance/STATUS.md) · [下一步](docs/maintenance/NEXT.md)
+
 ## 项目结构
 
 ```
