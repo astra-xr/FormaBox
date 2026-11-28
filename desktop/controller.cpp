@@ -1,4 +1,5 @@
 #include "controller.h"
+#include "outputpath.h"
 #include <QCoreApplication>
 #include <QClipboard>
 #include <QStandardPaths>
@@ -21,17 +22,6 @@
 #include <algorithm>
 
 namespace {
-bool isTaskOutput(const QFileInfo &directory, const QFileInfo &file) {
- if (!directory.isDir() || !directory.isAbsolute() || !file.isAbsolute() || file.isSymLink() ||
-     !(file.isFile() || file.isDir()))
-  return false;
- const auto root = directory.canonicalFilePath();
- const auto path = file.canonicalFilePath();
- if (root.isEmpty() || path.isEmpty() || path == root) return false;
- const auto relative = QDir(root).relativeFilePath(path);
- return relative != ".." && !relative.startsWith("../") && !QDir::isAbsolutePath(relative);
-}
-
 bool canOpenResult(const QFileInfo &file) {
  const auto suffix = file.suffix().toLower();
  static const QStringList formats = {"pdf", "png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff", "avif",
@@ -61,7 +51,9 @@ QString batchSession(const QJsonObject &request) {
 
 Controller::Controller(QObject *parent)
  : QObject(parent), engineRegistry(QCoreApplication::applicationDirPath()),
-   toolRegistry([this](QProcess &process) { configure(process); }) {
+   toolRegistry([this](QProcess &process) { configure(process); }),
+   inspection([this](QProcess &process, const QVariantMap *paths) { configure(process, paths); }),
+   previews(inspection) {
  loadHistory();
  m_presets = QSettings().value("tools/presets").toList();
  m_favorites = QSettings().value("tools/favorites").toStringList();
@@ -86,23 +78,15 @@ Controller::Controller(QObject *parent)
  connect(&worker,&QProcess::errorOccurred,this,[this](QProcess::ProcessError e){
   if(e==QProcess::FailedToStart && active>=0)finishJob({{"state","失败"},{"message",worker.errorString()}});
  });
- inspectionTimeout.setSingleShot(true);
- connect(&inspectionTimeout, &QTimer::timeout, this, [this] {
-  inspectionTimedOut = true;
-  inspection.kill();
+ connect(&inspection, &InspectionRunner::busyChanged, this, &Controller::inspectionChanged);
+ connect(&inspection, &InspectionRunner::finished, this, [this](const QString &command, const QJsonObject &,
+                                                               const QJsonValue &result, const QString &error) {
+  if (command == "check-engines") finishEngineCheck(result, error);
  });
- connect(&inspection, &QProcess::started, this, [this] {
-  if (!inspectionRequest.isEmpty())
-   inspection.write(QJsonDocument(inspectionRequest).toJson(QJsonDocument::Compact));
-  inspection.closeWriteChannel();
- });
- connect(&inspection, &QProcess::finished, this, [this](int, QProcess::ExitStatus status) {
-  finishInspection(status == QProcess::NormalExit);
- });
- connect(&inspection, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
-  if (error == QProcess::FailedToStart)
-   finishInspection(false);
- });
+ connect(&previews, &PreviewService::pdfPreviewReady, this, &Controller::pdfPreviewReady);
+ connect(&previews, &PreviewService::pdfCompressionReady, this, &Controller::pdfCompressionReady);
+ connect(&previews, &PreviewService::renamePreviewReady, this, &Controller::renamePreviewReady);
+ connect(&previews, &PreviewService::studioPreviewReady, this, &Controller::studioPreviewReady);
  QTimer::singleShot(0,this,&Controller::reload);
 }
 QString Controller::outputDefault()const{return QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).filePath("Omnora Output");}
@@ -270,35 +254,19 @@ void Controller::checkEngines(const QVariantMap &paths, bool save) {
   return;
  }
  saveEngines = save;
- startInspection("check-engines", 75000, &candidateEngines);
+ inspection.start("check-engines", 75000, {}, &candidateEngines);
 }
 
 void Controller::previewPdf(const QVariantList &inputs, int remaining) {
- if (inspecting()) return;
- if (!previewRoot)
-  previewRoot = std::make_unique<QTemporaryDir>(QDir::temp().filePath("formabox-preview-XXXXXX"));
- if (!previewRoot->isValid()) {
-  emit pdfPreviewReady({}, QStringLiteral("无法创建预览目录"));
-  return;
- }
- previewBatch = std::make_unique<QTemporaryDir>(previewRoot->filePath("batch-XXXXXX"));
- if (!previewBatch->isValid()) {
-  emit pdfPreviewReady({}, QStringLiteral("无法创建预览目录"));
-  return;
- }
- inspectionRequest = QJsonObject::fromVariantMap(
-     {{"inputs", inputs}, {"limit", remaining}, {"output", previewBatch->path()}});
- startInspection("preview-pdf", 60000);
+ previews.previewPdf(inputs, remaining);
 }
 
 void Controller::clearPdfPreview() {
- if (!inspecting()) previewRoot.reset();
+ previews.clearPdfPreview();
 }
 
 void Controller::previewRename(const QVariantList &inputs, const QVariantMap &params) {
- if (inspecting()) return;
- inspectionRequest = QJsonObject::fromVariantMap({{"inputs", inputs}, {"params", params}});
- startInspection("preview-rename", 60000);
+ previews.previewRename(inputs, params);
 }
 
 bool Controller::setFavorites(const QStringList &ids) {
@@ -316,31 +284,15 @@ bool Controller::setFavorites(const QStringList &ids) {
 
 void Controller::previewStudio(const QString &tool, const QVariantList &inputs, const QVariantMap &params,
                                const QVariantMap &options) {
- if (inspecting()) return;
- if (!studioRoot) studioRoot = std::make_unique<QTemporaryDir>();
- if (studioRoot->isValid())
-  studioBatch = std::make_unique<QTemporaryDir>(studioRoot->filePath("preview-XXXXXX"));
- if (!studioBatch || !studioBatch->isValid()) {
-  emit studioPreviewReady({}, QStringLiteral("无法创建预览目录"));
-  return;
- }
- auto request = options;
- request.insert("tool", tool);
- request.insert("inputs", inputs);
- request.insert("params", params);
- request.insert("output", studioBatch->path());
- inspectionRequest = QJsonObject::fromVariantMap(request);
- startInspection("preview-tool", 180000);
+ previews.previewStudio(tool, inputs, params, options);
 }
 
 void Controller::clearStudioPreview() {
- if (inspectionCommand != "preview-tool") studioRoot.reset();
+ previews.clearStudioPreview();
 }
 
 void Controller::playStudioSample(const QUrl &url) {
- const QFileInfo file(url.toLocalFile());
- if (studioRoot && file.suffix() == "wav" && isTaskOutput(QFileInfo(studioRoot->path()), file))
-  QDesktopServices::openUrl(url);
+ previews.playStudioSample(url);
 }
 
 void Controller::copyText(const QString &text) {
@@ -348,189 +300,46 @@ void Controller::copyText(const QString &text) {
 }
 
 void Controller::previewPdfCompression(const QVariantList &inputs, const QString &pages, int targetKiB, int page) {
- if (inspecting()) return;
- compressionPreview = std::make_unique<QTemporaryDir>();
- if (!compressionPreview->isValid()) {
-  compressionPreview.reset();
-  emit pdfCompressionReady({}, QStringLiteral("无法创建压缩预览目录"));
-  return;
- }
- inspectionRequest = QJsonObject::fromVariantMap(
-     {{"inputs", inputs}, {"pages", pages}, {"output", compressionPreview->path()},
-      {"target_kib", targetKiB}, {"page", page}});
- startInspection("preview-pdf-compression", 180000);
+ previews.previewPdfCompression(inputs, pages, targetKiB, page);
 }
 
 void Controller::clearPdfCompression() {
- if (inspectionCommand != "preview-pdf-compression") {
-  compressionPreview.reset();
-  compressionDetails.clear();
- }
+ previews.clearPdfCompression();
 }
 
 QString Controller::savePdfCompression(const QString &output) {
- if (!compressionPreview || inspecting())
-  return QStringLiteral("请先生成压缩预览");
- const auto directory = QDir::cleanPath(output.trimmed());
- if (!QDir::isAbsolutePath(directory) || !QDir().mkpath(directory))
-  return QStringLiteral("无法创建输出目录");
- QFile preview(compressionPreview->filePath("compressed.pdf"));
- if (!preview.open(QIODevice::ReadOnly) || preview.size() <= 0)
-  return QStringLiteral("压缩预览已失效");
- QTemporaryDir result(QDir(directory).filePath("Omnora-XXXXXX"));
- if (!result.isValid())
-  return QStringLiteral("无法创建任务目录");
- QSaveFile destination(result.filePath("workbench.pdf"));
- if (!destination.open(QIODevice::WriteOnly))
-  return QStringLiteral("无法保存 PDF：") + destination.errorString();
- while (!preview.atEnd()) {
-  const auto bytes = preview.read(1024 * 1024);
-  if (bytes.isEmpty() || destination.write(bytes) != bytes.size())
-   return QStringLiteral("无法写入 PDF");
- }
- if (!destination.commit())
-  return QStringLiteral("无法保存 PDF：") + destination.errorString();
- result.setAutoRemove(false);
+ const auto saved = previews.savePdfCompression(output);
+ if (!saved.error.isEmpty()) return saved.error;
+
+ const QFileInfo file(saved.path);
  m_jobs.append(QVariantMap{{"title", QStringLiteral("PDF 页面工作台")},
                           {"state", QStringLiteral("完成")}, {"progress", 1.0},
-                          {"message", QStringLiteral("已保存预览 · %1 KiB").arg(preview.size() / 1024.0, 0, 'f', 1)},
-                          {"directory", result.path()},
-                          {"outputs", QVariantList{resultRow(QFileInfo(result.filePath("workbench.pdf")), compressionDetails)}}});
+                          {"message", QStringLiteral("已保存预览 · %1 KiB").arg(file.size() / 1024.0, 0, 'f', 1)},
+                          {"directory", file.absolutePath()},
+                          {"outputs", QVariantList{resultRow(file, saved.details)}}});
  saveHistory();
  emit jobsChanged();
  return {};
 }
 
-void Controller::startInspection(const QString &command, int timeout, const QVariantMap *overrides) {
- inspectionCommand = command;
- inspectionTimedOut = false;
- configure(inspection, overrides);
- inspection.setArguments({"-B", "-m", "formabox", command});
- emit inspectionChanged();
- inspectionTimeout.start(timeout);
- inspection.start();
-}
-
-void Controller::finishInspection(bool exited) {
- if (!inspecting()) return;
- inspectionTimeout.stop();
- const auto reply = QJsonDocument::fromJson(inspection.readAllStandardOutput()).object();
- const auto diagnostics = QString::fromUtf8(inspection.readAllStandardError()).trimmed();
- const auto result = reply.value("result");
- auto error = reply.value("error").toString();
- if (inspectionTimedOut)
-  error = QStringLiteral("操作超时");
- else if (!exited || (result.isUndefined() && error.isEmpty()))
-  error = diagnostics.isEmpty() ? QStringLiteral("无法运行工作进程") : diagnostics.left(500);
-
- const bool pdf = inspectionCommand == "preview-pdf";
- const bool compression = inspectionCommand == "preview-pdf-compression";
- const bool rename = inspectionCommand == "preview-rename";
- const bool studio = inspectionCommand == "preview-tool";
- QVariantList pages;
- QVariantMap checks;
- if (pdf) {
-  const auto inputs = inspectionRequest.value("inputs").toArray();
-  for (const auto &value : result.toArray()) {
-   const auto row = value.toObject();
-   const int source = row.value("source").toInt(-1);
-   const int page = row.value("page").toInt(-1);
-   const QString image = row.value("thumbnail").toString();
-   const auto thumbnail = previewBatch->filePath(image);
-   if (source < 0 || source >= inputs.size() || page < 0 || !image.endsWith(".png") ||
-       QFileInfo(image).fileName() != image || !QFileInfo(thumbnail).isFile()) {
-    error = QStringLiteral("预览结果无效");
-    break;
-   }
-   const auto path = inputs.at(source).toString();
-   pages.append(QVariantMap{{"path", path}, {"name", QFileInfo(path).fileName()}, {"page", page},
-                            {"thumbnail", QUrl::fromLocalFile(thumbnail)}, {"rotation", 0}});
-  }
-  if (pages.isEmpty() && error.isEmpty())
-   error = QStringLiteral("文件没有可用页面");
-  if (error.isEmpty())
-   previewBatch->setAutoRemove(false);
-  else
-   pages.clear();
-  previewBatch.reset();
- } else if (compression) {
-  const QFileInfo candidate(compressionPreview->filePath("compressed.pdf"));
-  const auto before = compressionPreview->filePath("before.png");
-  const auto after = compressionPreview->filePath("after.png");
-  checks = result.toObject().toVariantMap();
-  if (error.isEmpty() && (!candidate.isFile() || !QFileInfo(before).isFile() || !QFileInfo(after).isFile() ||
-                          candidate.size() <= 0 || candidate.size() != checks.value("size").toLongLong() ||
-                          !checks.contains("met")))
-   error = QStringLiteral("压缩结果无效");
-  if (error.isEmpty()) {
-   checks.insert("before", QUrl::fromLocalFile(before));
-   checks.insert("after", QUrl::fromLocalFile(after));
-   compressionDetails = {{"original_bytes", checks.value("original")}, {"target_bytes", checks.value("target")}};
-  } else {
-   compressionPreview.reset();
-  }
- } else if (rename) {
-  checks = result.toObject().toVariantMap();
-  if (error.isEmpty() && (checks.value("rows").toList().isEmpty() || checks.value("plan").toString().size() != 64))
-   error = QStringLiteral("改名预览结果无效");
- } else if (studio) {
-  checks = result.toObject().toVariantMap();
-  const auto previewUrl = [&](const QVariant &entry) {
-   const auto name = entry.toString();
-   const QFileInfo file(studioBatch->filePath(name));
-   if (name.isEmpty() || QFileInfo(name).fileName() != name ||
-       !isTaskOutput(QFileInfo(studioBatch->path()), file) || !file.isFile()) {
-    error = QStringLiteral("预览文件无效");
-    return QUrl{};
-   }
-   return QUrl::fromLocalFile(file.filePath());
-  };
-  for (const auto *key : {"image", "sample"}) {
-   if (checks.contains(key)) checks[key] = previewUrl(checks[key]);
-  }
-  if (checks.contains("pictures")) {
-   QVariantList pictures;
-   for (const auto &file : checks.value("pictures").toList()) pictures.append(previewUrl(file));
-   checks["pictures"] = pictures;
-  }
-  if (checks.contains("rows")) {
-   QVariantList rows;
-   for (const auto &value : checks.value("rows").toList()) {
-    auto row = value.toMap();
-    if (row.contains("thumbnail")) row["thumbnail"] = previewUrl(row["thumbnail"]);
-    rows.append(row);
-   }
-   checks["rows"] = rows;
-  }
-  if (error.isEmpty()) studioBatch->setAutoRemove(false);
-  studioBatch.reset();
- } else {
-  checks = result.toObject().toVariantMap();
-  if (error.isEmpty() && saveEngines) {
-   error = engineRegistry.saveTested(candidateEngines, checks);
-   if (error.isEmpty()) {
-    error = QStringLiteral("设置已保存");
-    reload();
-   }
-  }
-  candidateEngines.clear();
-  saveEngines = false;
-  if (error.isEmpty())
-   error = QStringLiteral("测试结束");
+void Controller::finishEngineCheck(const QJsonValue &result, QString error) {
+ const auto checks = result.toObject().toVariantMap();
+ if (error.isEmpty() && !result.isObject())
+  error = QStringLiteral("引擎诊断结果无效");
+ bool saved = false;
+ if (error.isEmpty() && saveEngines) {
+  error = engineRegistry.saveTested(candidateEngines, checks);
+  saved = error.isEmpty();
+  if (saved)
+   error = QStringLiteral("设置已保存");
  }
- inspectionRequest = {};
- inspectionCommand.clear();
- emit inspectionChanged();
- if (pdf)
-  emit pdfPreviewReady(pages, error);
- else if (compression)
-  emit pdfCompressionReady(checks, error);
- else if (rename)
-  emit renamePreviewReady(checks.value("rows").toList(), checks.value("plan").toString(), error);
- else if (studio)
-  emit studioPreviewReady(checks, error);
- else
-  emit enginesChecked(checks, error);
+ candidateEngines.clear();
+ saveEngines = false;
+ if (saved)
+  reload();
+ if (error.isEmpty())
+  error = QStringLiteral("测试结束");
+ emit enginesChecked(checks, error);
 }
 void Controller::submit(QString tool,QVariantList inputs,QVariantMap params,QString output){
  if(tool.isEmpty()||inputs.isEmpty()||output.trimmed().isEmpty()){setStatus(QStringLiteral("请选择工具、输入和输出目录"));return;}

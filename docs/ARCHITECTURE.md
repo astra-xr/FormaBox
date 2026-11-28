@@ -10,6 +10,8 @@ Qt 通过 `python -m formabox list` 获得 JSON 数组工具规格，规格含 i
 
 桌面的 `EngineRegistry` 提供引擎设置选项、内置路径识别和 worker 环境配置。完整安装版优先使用内置的 FFmpeg、Tesseract、LibreOffice 和 whisper.cpp，继续隐藏引擎设置入口。开发版可测试并保存手动路径，留空时沿用环境变量和 worker 自动查找。`check-engines` 用独立样本验证转换与 OCR，并检查 whisper.cpp 能否启动。语音模型在实际转写任务中校验。保存前核对诊断返回的可执行文件路径与用户选择一致。
 
+桌面的 `PreviewService` 负责 PDF 页面、压缩对照、批量改名及交互工具的预览。它验证预览文件位于当前临时目录，保留工作台分批导入的缩略图，清除正在生成的预览时等 worker 退出后再删除临时文件。保存 PDF 压缩预览时复用已经验证的文件并原子提交。`InspectionRunner` 为预览和引擎诊断共用，负责进程启动、超时和返回结果。`Controller` 转发原有 QML 接口并记录已保存的 PDF 任务。
+
 运行时使用 `python -m formabox run --request -`，stdin 写入单个 UTF-8 JSON 对象再关闭。单进程一次任务。stdout JSONL：`progress` current/total/message，`result` directory/files，`error` message/type，`cancelled` message。只有真实返回并正常退出时可判定成功。退出码 0/1/2。进度目前通常按文件计数而非时间，单个长任务可能长时间不变化。
 
 取消机制：桌面端创建每任务独立临时目录，取消时写标记文件，worker 在循环与外部进程轮询中检查；库内部的单次长调用未必能即时取消。Python 进程崩溃或被强制终止可能遗留暂存目录和外部子进程。后续用 Windows Job Object/受限令牌等做进程树控制与 OS 级沙箱。

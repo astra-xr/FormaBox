@@ -6,10 +6,11 @@
 #include <QQueue>
 #include <QHash>
 #include <QTemporaryDir>
-#include <QTimer>
 #include <QJsonObject>
 #include <memory>
 #include "engineregistry.h"
+#include "inspectionrunner.h"
+#include "previewservice.h"
 #include "toolregistry.h"
 class Controller final : public QObject {
  Q_OBJECT
@@ -32,7 +33,7 @@ public:
  bool busy() const {return active>=0 || !pending.isEmpty();}
  QString outputDefault() const;
  bool systemDark() const;
- bool inspecting() const { return !inspectionCommand.isEmpty(); }
+ bool inspecting() const { return inspection.busy(); }
  QVariantList presets() const { return m_presets; }
  QStringList favorites() const { return m_favorites; }
  Q_INVOKABLE bool setFavorites(const QStringList &ids);
@@ -83,6 +84,8 @@ private:
  struct Request {int index; QJsonObject json;};
  const EngineRegistry engineRegistry;
  ToolRegistry toolRegistry;
+ InspectionRunner inspection;
+ PreviewService previews;
  QVariantList m_jobs; QString m_status; QProcess worker; QByteArray buffer; QQueue<Request> pending; int active=-1;
  QVariantList m_presets;
  QStringList m_favorites;
@@ -93,21 +96,9 @@ private:
  QJsonObject activeRequest, outcome;
  QHash<int,QJsonObject> retryRequests;
  bool protocolError=false;
- QProcess inspection;
- QTimer inspectionTimeout;
- QString inspectionCommand;
- QJsonObject inspectionRequest;
  QVariantMap candidateEngines;
  bool saveEngines = false;
- bool inspectionTimedOut = false;
- std::unique_ptr<QTemporaryDir> previewRoot;
- std::unique_ptr<QTemporaryDir> studioRoot;
- std::unique_ptr<QTemporaryDir> studioBatch;
- std::unique_ptr<QTemporaryDir> previewBatch;
- std::unique_ptr<QTemporaryDir> compressionPreview;
- QVariantMap compressionDetails;
- void startInspection(const QString &command, int timeout, const QVariantMap *overrides = nullptr);
- void finishInspection(bool exited);
+ void finishEngineCheck(const QJsonValue &result, QString error);
  void finishJob(QVariantMap values);
  void setStatus(QString); void startNext(); void enqueue(QJsonObject,QString); void update(int,QVariantMap); void processLine(QByteArray); void finalize(int,QProcess::ExitStatus); void configure(QProcess&, const QVariantMap *overrides = nullptr); void loadHistory(); void saveHistory();
 };

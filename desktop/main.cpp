@@ -228,17 +228,25 @@ static bool verifyWorkbench(QQmlApplicationEngine &engine, QObject *root, Contro
         window.property("suggestions").property(0).property("id").toString() != "pdf.compose")
         return false;
 
-    QEventLoop wait;
-    auto completed = QObject::connect(&controller, &Controller::pdfPreviewReady, &wait, &QEventLoop::quit);
-    QTimer::singleShot(6000, &wait, &QEventLoop::quit);
-    if (!invokeQml(window, "openWorkbench"))
+    const auto awaitPages = [&](const std::function<bool()> &request) {
+        QEventLoop wait;
+        QObject::connect(&controller, &Controller::pdfPreviewReady, &wait, &QEventLoop::quit);
+        QTimer::singleShot(6000, &wait, &QEventLoop::quit);
+        if (!request())
+            return false;
+        if (controller.inspecting())
+            wait.exec();
+        return !controller.inspecting();
+    };
+    window.setProperty("inputs", engine.toScriptValue(QVariantList{pdfPath}));
+    if (!awaitPages([&] { return invokeQml(window, "openWorkbench"); }))
         return false;
-    if (controller.inspecting())
-        wait.exec();
-    QObject::disconnect(completed);
 
     auto panel = engine.newQObject(root->findChild<QObject *>("pdfWorkbench"));
-    if (panel.property("pages").property("length").toInt() != 3 ||
+    const auto thumbnail = panel.property("pages").property(0).property("thumbnail").toVariant().toUrl().toLocalFile();
+    if (panel.property("pages").property("length").toInt() != 2 || !QFileInfo(thumbnail).isFile() ||
+        !awaitPages([&] { return invokeQml(panel, "importPaths", {engine.toScriptValue(QVariantList{imagePath})}); }) ||
+        panel.property("pages").property("length").toInt() != 3 || !QFileInfo(thumbnail).isFile() ||
         !invokeQml(panel, "movePage", {QJSValue(2), QJSValue(0)}) ||
         !invokeQml(panel, "rotatePage") ||
         panel.property("pages").property(0).property("rotation").toInt() != 90 ||
@@ -271,10 +279,27 @@ static bool verifyWorkbench(QQmlApplicationEngine &engine, QObject *root, Contro
     const auto bytes = preview.property("size").toInt();
     const QUrl original = preview.property("before").toVariant().toUrl();
     const QUrl optimized = preview.property("after").toVariant().toUrl();
-    if (bytes <= 0 || !QFileInfo(original.toLocalFile()).isFile() || !QFileInfo(optimized.toLocalFile()).isFile() ||
-        preview.property("met").toBool() != (bytes <= 1024) || !invokeQml(panel, "saveCompression") ||
-        lastOutput(controller, "workbench.pdf").size() != bytes)
+    QFile stagedPdf(QFileInfo(optimized.toLocalFile()).dir().filePath("compressed.pdf"));
+    if (!stagedPdf.open(QIODevice::ReadOnly))
         return false;
+    const auto stagedBytes = stagedPdf.readAll();
+    stagedPdf.close();
+    if (bytes <= 0 || !QFileInfo(original.toLocalFile()).isFile() || !QFileInfo(optimized.toLocalFile()).isFile() ||
+        stagedBytes.size() != bytes || preview.property("met").toBool() != (bytes <= 1024) ||
+        !invokeQml(panel, "saveCompression") || QFileInfo(optimized.toLocalFile()).exists())
+        return false;
+    QFile savedPdf(lastOutput(controller, "workbench.pdf").filePath());
+    if (!savedPdf.open(QIODevice::ReadOnly) || savedPdf.readAll() != stagedBytes)
+        return false;
+    savedPdf.close();
+
+    if (!awaitPages([&] {
+            controller.previewPdf({imagePath}, 3);
+            controller.clearPdfPreview();
+            return true;
+        }) || panel.property("notice").toString().isEmpty() || QFileInfo(thumbnail).exists())
+        return false;
+    panel.setProperty("pages", engine.toScriptValue(QVariantList{}));
 
     if (!verifyPdfEdits(engine, root, controller, pdfPath, files.filePath("pdf-edits"))) {
         qWarning("PDF editing tools did not complete from the desktop workflow.");

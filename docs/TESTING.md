@@ -1,5 +1,13 @@
 # 实际测试记录
 
+## 0.9.1 开发中 · 引擎注册表
+
+本机 Windows x64 的工具清单、命令行和引擎路径回归共 4 项通过。用显式不存在的路径运行 `python -B -X utf8 -m formabox check-engines`，四套引擎均正确报告不可用。校验 Windows CI 产物后同步本机桌面和 worker，根目录 `Omnora.exe --verify-runtime` 退出码为 0。
+
+[GitHub Windows CI](https://github.com/astra-xr/Omnora/actions/runs/46094521437) 编译并验证开发版的路径选择、保存前的诊断路径核对和重置。内置引擎环境中 `python -m pytest -q -ra tests` 通过 67 项。`check-engines` 验证四个引擎实际选中预期路径，Word 转 PDF、OCR、音频生成与 whisper.cpp 启动均通过。给桌面进程注入失效的引擎路径和 OCR 字库环境变量后，验证了内置程序优先和设置入口隐藏。
+
+使用从 0.9.0 完整包提取并校验的引擎，在桌面暂存目录运行 `python -X utf8 -B tests/smoke_tools.py`。79 个工具全部通过，失败、阻塞均为 0，含真实的语音转写。此轮的安装验证覆盖 NSIS 模板编译，完整包安装和卸载的实际记录见上一轮。
+
 ## 0.9.1 开发中 · 工具目录拆分
 
 在本机 Windows x64 上，改动前用 `Omnora.exe --verify-runtime` 验证项目现有启动器，退出码为 0。用项目虚拟环境运行 `python -B -m pytest -q -ra -p no:cacheprovider --basetemp .dev/registry-091/pytest-before tests`，61 项通过，6 项跳过。跳过的用例需要 PATH 中的 FFmpeg（3 项）、Tesseract（1 项）或可运行的 LibreOffice（2 项）。本轮基线有意关闭 LibreOffice。
