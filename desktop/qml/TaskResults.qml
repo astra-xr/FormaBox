@@ -108,6 +108,8 @@ Dialog {
                                 if (item.target_bytes > 0)
                                     info += " · 目标 " + dialog.sizeLabel(item.target_bytes) +
                                              (item.bytes <= item.target_bytes ? " · 已达标" : " · 超出目标")
+                                if (item.sizeChanged)
+                                    info += " · 当前文件大小已变化"
                                 return info
                             }
                         }

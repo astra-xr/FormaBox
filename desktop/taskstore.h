@@ -33,6 +33,9 @@ private:
     bool write(const Record &record, bool inFlight, bool imported = false);
     bool addEvent(const QVariantMap &view, bool imported, bool inFlight);
     bool importSnapshots();
+    bool importArtifacts();
+    bool writeArtifacts(const QVariantMap &view);
+    QVariantList readArtifacts(const QString &taskId);
     bool commit();
     bool prune();
     bool fail(QString error);

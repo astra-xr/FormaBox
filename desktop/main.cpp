@@ -711,6 +711,122 @@ static bool verifyTaskEventMigration(const QString &directory)
            events.first().toMap().value("errorCode") == "file_not_found";
 }
 
+static bool verifyTaskArtifacts(const QString &directory)
+{
+    const QDir root(directory);
+    const auto output = root.filePath("output");
+    const auto source = root.filePath("source.png");
+    const auto legacy = root.filePath("旧图片.png");
+    const auto legacyId = TaskStore::newId();
+    if (!QDir().mkpath(directory))
+        return false;
+    const auto connection = TaskStore::newId();
+    const auto databasePath = root.filePath("tasks.sqlite");
+    const auto withDatabase = [&](const auto &action) {
+        bool ok = false;
+        {
+            auto database = QSqlDatabase::addDatabase("QSQLITE", connection);
+            database.setDatabaseName(databasePath);
+            ok = database.open() && action(database);
+        }
+        QSqlDatabase::removeDatabase(connection);
+        return ok;
+    };
+    if (!withDatabase([&](const QSqlDatabase &database) {
+            QSqlQuery query(database);
+            if (!query.exec("CREATE TABLE tasks (sequence INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL, "
+                            "owner TEXT, snapshot BLOB NOT NULL, request BLOB)") ||
+                !query.exec("CREATE TABLE task_events (sequence INTEGER PRIMARY KEY, task_id TEXT NOT NULL "
+                            "REFERENCES tasks(id) ON DELETE CASCADE, attempt INTEGER NOT NULL, state TEXT NOT NULL, "
+                            "occurred_at INTEGER, message TEXT, error_code TEXT)") ||
+                !query.exec("CREATE TABLE task_meta (key TEXT PRIMARY KEY)") ||
+                !query.exec("INSERT INTO task_meta(key) VALUES('qsettings-history')") ||
+                !query.exec("PRAGMA user_version=2"))
+                return false;
+            const QVariantMap file{{"path", legacy}, {"name", QFileInfo(legacy).fileName()}, {"bytes", 160}};
+            const QVariantMap snapshot{{"state", QStringLiteral("完成")}, {"directory", root.path()},
+                                       {"outputs", QVariantList{file}}};
+            query.prepare("INSERT INTO tasks(id, snapshot) VALUES(?, ?)");
+            query.addBindValue(legacyId);
+            query.addBindValue(QJsonDocument::fromVariant(snapshot).toJson(QJsonDocument::Compact));
+            if (!query.exec())
+                return false;
+            query.prepare("INSERT INTO task_events(task_id, attempt, state) VALUES(?, 1, ?)");
+            query.addBindValue(legacyId);
+            query.addBindValue(snapshot.value("state"));
+            return query.exec();
+        }))
+        return false;
+
+    QString taskId;
+    QString resultPath;
+    {
+        Controller controller(directory);
+        if (!controller.historyWarning().isEmpty() || controller.jobs().size() != 1)
+            return false;
+        const auto imported = controller.resultItems(0);
+        if (imported.size() != 1 || imported.first().toMap().value("path") != legacy ||
+            imported.first().toMap().value("available").toBool())
+            return false;
+        {
+            QEventLoop wait;
+            QObject::connect(&controller, &Controller::jobsChanged, &wait, [&] {
+                if (!controller.busy()) wait.quit();
+            });
+            QTimer::singleShot(6500, &wait, &QEventLoop::quit);
+            controller.submit("image.convert", {source}, {}, output);
+            if (controller.busy()) wait.exec();
+        }
+        if (controller.busy() || controller.jobs().size() != 2 || !controller.resultItems(1).isEmpty())
+            return false;
+        const auto failed = controller.jobs().last().toMap();
+        if (failed.value("errorCode") != "file_not_found")
+            return false;
+        taskId = failed.value("taskId").toString();
+        QImage image(24, 12, QImage::Format_RGB32);
+        image.fill(Qt::blue);
+        if (!image.save(source))
+            return false;
+        QEventLoop wait;
+        QObject::connect(&controller, &Controller::jobsChanged, &wait, [&] {
+            if (!controller.busy()) wait.quit();
+        });
+        QTimer::singleShot(6500, &wait, &QEventLoop::quit);
+        controller.retry(1);
+        if (controller.busy()) wait.exec();
+        const auto produced = controller.resultItems(1);
+        if (controller.busy() || produced.size() != 1 || !produced.first().toMap().value("available").toBool())
+            return false;
+        resultPath = produced.first().toMap().value("path").toString();
+    }
+
+    if (!withDatabase([&](const QSqlDatabase &database) {
+            QSqlQuery query(database);
+            return query.exec("SELECT attempt FROM task_artifacts JOIN task_events "
+                              "ON task_artifacts.completion=task_events.sequence ORDER BY attempt") &&
+                   query.next() && query.value(0).toInt() == 1 && query.next() && query.value(0).toInt() == 2 && !query.next();
+        }))
+        return false;
+    QFile result(resultPath);
+    if (!result.open(QIODevice::Append) || result.write("x", 1) != 1)
+        return false;
+    result.close();
+    {
+        Controller reopened(directory);
+        const auto jobs = reopened.jobs();
+        if (jobs.size() != 2 || jobs.last().toMap().value("taskId") != taskId)
+            return false;
+        const auto item = reopened.resultItems(1).value(0).toMap();
+        if (item.value("path") != resultPath || !item.value("available").toBool() || !item.value("sizeChanged").toBool())
+            return false;
+        reopened.clearHistory();
+    }
+    return QFileInfo::exists(resultPath) && QFileInfo::exists(source) && withDatabase([](const QSqlDatabase &database) {
+        QSqlQuery query(database);
+        return query.exec("SELECT COUNT(*) FROM task_artifacts") && query.next() && query.value(0).toInt() == 0;
+    });
+}
+
 static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controller &controller)
 {
     if (root->property("title").toString() != QStringLiteral("万象 · Omnora"))
@@ -825,8 +941,9 @@ int main(int argc, char **argv)
         QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, verificationSettings->path());
         if (options.contains("--verify-runtime") &&
             (!verifyTaskStorage(verificationSettings->filePath("storage-check")) ||
-             !verifyTaskEventMigration(verificationSettings->filePath("storage-v1")))) {
-            qWarning("Task storage migration, recovery, or password protection failed.");
+             !verifyTaskEventMigration(verificationSettings->filePath("storage-v1")) ||
+             !verifyTaskArtifacts(verificationSettings->filePath("storage-v2")))) {
+            qWarning("Task storage migration, recovery, artifact records, or password protection failed.");
             return 3;
         }
     }

@@ -45,6 +45,12 @@ QString redact(QString text, const QStringList &secrets)
     return text;
 }
 
+QByteArray encodeSnapshot(QVariantMap fields)
+{
+    fields.remove("outputs");
+    return QJsonDocument::fromVariant(fields).toJson(QJsonDocument::Compact);
+}
+
 QVariantMap snapshot(QVariantMap fields, const QStringList &secrets = {})
 {
     fields.remove("canRetry");
@@ -100,7 +106,7 @@ TaskStore::TaskStore(const QString &directory)
     }
     const auto version = query.value(0).toInt();
     query.finish();
-    if (version > 2) {
+    if (version > 3) {
         fail(QStringLiteral("任务数据库版本高于当前程序支持的版本"));
         return;
     }
@@ -115,12 +121,19 @@ TaskStore::TaskStore(const QString &directory)
                     "task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, attempt INTEGER NOT NULL, "
                     "state TEXT NOT NULL, occurred_at INTEGER, message TEXT, error_code TEXT)") ||
         !query.exec("CREATE INDEX IF NOT EXISTS task_events_by_task ON task_events(task_id, sequence)") ||
-        (version < 2 && !query.exec("PRAGMA user_version=2"))) {
+        !query.exec("CREATE TABLE IF NOT EXISTS task_artifacts (completion INTEGER NOT NULL "
+                    "REFERENCES task_events(sequence) ON DELETE CASCADE, position INTEGER NOT NULL, "
+                    "metadata BLOB NOT NULL, PRIMARY KEY(completion, position))")) {
         fail(query.lastError().text());
         m_database.rollback();
         return;
     }
-    if (version < 2 && !importSnapshots()) {
+    if ((version < 2 && !importSnapshots()) || (version < 3 && !importArtifacts())) {
+        m_database.rollback();
+        return;
+    }
+    if (version < 3 && !query.exec("PRAGMA user_version=3")) {
+        fail(query.lastError().text());
         m_database.rollback();
         return;
     }
@@ -212,14 +225,14 @@ bool TaskStore::write(const Record &record, bool inFlight, bool imported)
                   "WHERE tasks.owner=? OR (tasks.owner IS NULL AND tasks.request IS NOT NULL)");
     query.addBindValue(record.view.value("taskId"));
     query.addBindValue(inFlight ? QVariant(m_session) : QVariant());
-    query.addBindValue(QJsonDocument::fromVariant(view).toJson(QJsonDocument::Compact));
+    query.addBindValue(encodeSnapshot(view));
     query.addBindValue(retainRequest ? QVariant(QJsonDocument(request).toJson(QJsonDocument::Compact)) : QVariant());
     query.addBindValue(m_session);
     if (!query.exec())
         return fail(query.lastError().text());
     if (query.numRowsAffected() != 1)
         return fail(QStringLiteral("任务正在另一个万象窗口运行或已处理"));
-    return addEvent(view, imported, inFlight);
+    return addEvent(view, imported, inFlight) && writeArtifacts(view);
 }
 
 bool TaskStore::addEvent(const QVariantMap &view, bool imported, bool inFlight)
@@ -266,6 +279,80 @@ bool TaskStore::importSnapshots()
             return false;
     }
     return true;
+}
+
+bool TaskStore::writeArtifacts(const QVariantMap &view)
+{
+    const auto outputs = view.value("outputs").toList();
+    if (view.value("state").toString() != QStringLiteral("完成") || outputs.isEmpty())
+        return true;
+
+    QSqlQuery completion(m_database);
+    completion.prepare("SELECT sequence FROM task_events WHERE task_id=? AND state=? ORDER BY sequence DESC LIMIT 1");
+    completion.addBindValue(view.value("taskId"));
+    completion.addBindValue(view.value("state"));
+    if (!completion.exec() || !completion.next())
+        return fail(completion.lastError().text());
+    const auto eventId = completion.value(0);
+    completion.finish();
+
+    QSqlQuery insert(m_database);
+    if (!insert.prepare("INSERT INTO task_artifacts(completion, position, metadata) VALUES(?, ?, ?)"))
+        return fail(insert.lastError().text());
+    for (qsizetype index = 0; index < outputs.size(); ++index) {
+        const auto item = outputs.at(index).toMap();
+        if (item.value("path").toString().isEmpty())
+            continue;
+        insert.bindValue(0, eventId);
+        insert.bindValue(1, index);
+        insert.bindValue(2, QJsonDocument::fromVariant(item).toJson(QJsonDocument::Compact));
+        if (!insert.exec())
+            return fail(insert.lastError().text());
+    }
+    return true;
+}
+
+bool TaskStore::importArtifacts()
+{
+    QSqlQuery query(m_database);
+    if (!query.exec("SELECT id, snapshot FROM tasks"))
+        return fail(query.lastError().text());
+    QList<QVariantMap> legacy;
+    while (query.next()) {
+        auto view = QJsonDocument::fromJson(query.value(1).toByteArray()).object().toVariantMap();
+        if (view.contains("outputs")) {
+            view["taskId"] = query.value(0);
+            legacy.append(std::move(view));
+        }
+    }
+    query.finish();
+    if (!query.prepare("UPDATE tasks SET snapshot=? WHERE id=?"))
+        return fail(query.lastError().text());
+    for (const auto &view : legacy) {
+        if (!writeArtifacts(view))
+            return false;
+        query.bindValue(0, encodeSnapshot(view));
+        query.bindValue(1, view.value("taskId"));
+        if (!query.exec())
+            return fail(query.lastError().text());
+    }
+    return true;
+}
+
+QVariantList TaskStore::readArtifacts(const QString &taskId)
+{
+    QSqlQuery query(m_database);
+    query.prepare("SELECT metadata FROM task_artifacts WHERE completion=(SELECT sequence FROM task_events "
+                  "WHERE task_id=? ORDER BY sequence DESC LIMIT 1) ORDER BY position");
+    query.addBindValue(taskId);
+    if (!query.exec()) {
+        fail(query.lastError().text());
+        return {};
+    }
+    QVariantList outputs;
+    while (query.next())
+        outputs.append(QJsonDocument::fromJson(query.value(0).toByteArray()).object().toVariantMap());
+    return outputs;
 }
 
 QVariantList TaskStore::events(const QString &taskId)
@@ -338,7 +425,7 @@ QList<TaskStore::Record> TaskStore::load()
                 continue;
             }
             query.prepare("UPDATE tasks SET owner=NULL, snapshot=? WHERE id=? AND owner=?");
-            query.addBindValue(QJsonDocument::fromVariant(snapshot(row.record.view)).toJson(QJsonDocument::Compact));
+            query.addBindValue(encodeSnapshot(snapshot(row.record.view)));
             query.addBindValue(row.record.view.value("taskId"));
             query.addBindValue(row.owner);
             if (!query.exec()) {
@@ -353,6 +440,11 @@ QList<TaskStore::Record> TaskStore::load()
             }
             if (!commit())
                 continue;
+        }
+        if (row.record.view.value("state").toString() == QStringLiteral("完成")) {
+            const auto outputs = readArtifacts(row.record.view.value("taskId").toString());
+            if (!outputs.isEmpty())
+                row.record.view["outputs"] = outputs;
         }
         history.append(std::move(row.record));
     }

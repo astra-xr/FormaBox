@@ -223,8 +223,10 @@ QVariantList Controller::resultItems(int index) const {
   auto item = value.toMap();
   const QFileInfo file(item.value("path").toString());
   const bool available = isTaskOutput(directory, file);
+  const auto recordedSize = item.value("bytes", -1).toLongLong();
   item.insert("available", available);
   item.insert("canOpen", available && canOpenResult(file));
+  item.insert("sizeChanged", available && file.isFile() && recordedSize >= 0 && recordedSize != file.size());
   items.append(item);
  }
  return items;
