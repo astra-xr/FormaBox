@@ -53,10 +53,17 @@ void move(const fs::path &source, const fs::path &target, DWORD flags = 0)
 void record(const fs::path &path, const std::string &bytes)
 {
     const auto partial = path.native() + L".tmp";
-    std::ofstream output(partial, std::ios::binary);
-    output.exceptions(std::ios::badbit | std::ios::failbit);
-    output << bytes;
-    output.close();
+    const auto file = CreateFileW(partial.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                                  FILE_ATTRIBUTE_NORMAL | FILE_FLAG_WRITE_THROUGH, nullptr);
+    if (file == INVALID_HANDLE_VALUE)
+        throw std::system_error(GetLastError(), std::system_category());
+    DWORD written = 0;
+    const bool saved = WriteFile(file, bytes.data(), static_cast<DWORD>(bytes.size()), &written, nullptr) &&
+                       FlushFileBuffers(file);
+    const DWORD error = saved ? ERROR_WRITE_FAULT : GetLastError();
+    CloseHandle(file);
+    if (!saved || written != bytes.size())
+        throw std::system_error(error, std::system_category());
     move(partial, path, MOVEFILE_REPLACE_EXISTING);
 }
 
@@ -89,9 +96,10 @@ public:
     {
         if (kind(staging) != Kind::Missing)
             recover();
-        fs::create_directories(payload);
+        fs::create_directories(staging);
         record(staging / "owner", ownership);
         record(staging / "previous-version", previousVersion);
+        fs::create_directory(payload);
     }
 
     void apply()
@@ -204,6 +212,7 @@ public:
             for (auto it = directories.rbegin(); it != directories.rend(); ++it)
                 RemoveDirectoryW(it->c_str());
             restoreRegisteredVersion();
+            record(staging / "accepted", ownership);
         }
         cleanup();
     }
@@ -272,7 +281,10 @@ int wmain(int argc, wchar_t **argv)
             const std::wstring version(argv[3]);
             if (version.find_first_not_of(L"0123456789.") != std::wstring::npos)
                 return 2;
-            transaction.prepare({version.begin(), version.end()});
+            std::string previousVersion;
+            for (const wchar_t character : version)
+                previousVersion.push_back(static_cast<char>(character));
+            transaction.prepare(previousVersion);
         } else if (action == L"apply") {
             transaction.apply();
         } else if (action == L"accept") {
