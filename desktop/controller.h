@@ -95,7 +95,7 @@ private:
  std::unique_ptr<QTemporaryDir> temp;
  QJsonObject activeRequest, outcome;
  QHash<int,QJsonObject> retryRequests;
- bool protocolError=false;
+ QString protocolError;
  QVariantMap candidateEngines;
  bool saveEngines = false;
  void finishEngineCheck(const QJsonValue &result, QString error);

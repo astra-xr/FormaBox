@@ -2,6 +2,7 @@ from __future__ import annotations
 import hashlib, json, os, re, shutil, stat, subprocess, tempfile, time, uuid
 from pathlib import Path
 from dataclasses import dataclass, field
+from .protocol import EngineFailed, InvalidRequest, MissingDependency, emit, validate_request
 
 TOOLS = {}
 class Cancelled(Exception): pass
@@ -14,9 +15,6 @@ def tool(id, category, label, params=(), minimum=1, maximum=0, description='', e
         TOOLS[id] = (dict(id=id,category=category,label=label,params=list(params),minimum=minimum,maximum=maximum,description=description,engines=list(engines)),fn)
         return fn
     return wrap
-
-def emit(event, **fields):
-    print(json.dumps(dict(event=event,**fields), ensure_ascii=False),flush=True)
 
 def integer(p,k,lo,hi):
     try: v=int(p[k])
@@ -141,7 +139,7 @@ def find_executable(name):
 
 def exe(name):
     path=find_executable(name)
-    if not path: raise RuntimeError(f'缺少外部工具 {name}，请查看安装说明')
+    if not path: raise MissingDependency(f'缺少外部工具 {name}，请查看安装说明')
     return path
 
 @dataclass
@@ -180,7 +178,7 @@ class Context:
             finally:
                 if proc.poll() is None: proc.kill(); proc.wait()
             out.seek(0,2); end=out.tell(); out.seek(max(0,end-8192)); msg=out.read().decode('utf-8','replace')
-            if proc.returncode: raise RuntimeError(f'外部工具失败 ({proc.returncode}): {msg}')
+            if proc.returncode: raise EngineFailed(f'外部工具失败 ({proc.returncode}): {msg}')
             return msg
 
 def digest(path, algorithm='sha256', ctx=None):
@@ -264,17 +262,18 @@ def invoke(id,inputs,params,ctx):
 def execute(req,progress=emit):
     from . import imageops,pdfops,mediaops,fileops,textops,privacyops # register
     from . import studio_files, studio_images, studio_media, studio_pdf, studio_speech
-    if not isinstance(req, dict) or not isinstance(req.get('inputs'), list) or not req['inputs']:
-        raise ValueError('请选择输入文件或目录')
+    validate_request(req)
+    if not isinstance(req.get('inputs'), list) or not req['inputs']:
+        raise InvalidRequest('请选择输入文件或目录')
     if ('steps' in req) == ('tool' in req):
-        raise ValueError('请指定单个工具或工作流')
+        raise InvalidRequest('请指定单个工具或工作流')
     steps = req.get('steps')
     if 'steps' in req and (not isinstance(steps, list) or not 1 <= len(steps) <= 32 or
                            not all(isinstance(step, dict) for step in steps)):
-        raise ValueError('工作流需要 1–32 个有效步骤')
+        raise InvalidRequest('工作流需要 1–32 个有效步骤')
     cancel_value = req.get('cancel')
     if cancel_value is not None and not isinstance(cancel_value, str):
-        raise ValueError('取消标记需要有效的文件路径')
+        raise InvalidRequest('取消标记需要有效的文件路径')
     cancel = Path(cancel_value).absolute() if cancel_value else None
     inputs=[checked_path(x) for x in req['inputs']]
     output=extended_path(checked_path(req.get('output'),allow_missing=True))

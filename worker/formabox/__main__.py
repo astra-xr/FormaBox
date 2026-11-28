@@ -3,7 +3,8 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
-from .core import TOOLS, execute, emit, Cancelled, find_executable
+from .core import TOOLS, execute, Cancelled, find_executable
+from .protocol import PROTOCOL_VERSION, decode_request, diagnostic_type, emit, error_code, validate_request
 from . import imageops,pdfops,mediaops,fileops,textops,privacyops
 from . import studio_files, studio_images, studio_media, studio_pdf, studio_speech
 
@@ -56,25 +57,30 @@ def main():
         print(json.dumps(engine_availability(),ensure_ascii=False))
         return 0
     if args.command in ('check-engines', 'preview-pdf', 'preview-pdf-compression', 'preview-rename', 'preview-tool'):
+        request = None
         try:
+            if args.command != 'check-engines':
+                request = decode_request(sys.stdin.buffer.read())
+                validate_request(request)
             if args.command == 'preview-pdf':
                 from .pdfworkbench import preview_pages
-                result = preview_pages(json.load(sys.stdin.buffer))
+                result = preview_pages(request)
             elif args.command == 'preview-pdf-compression':
                 from .pdfworkbench import preview_compression
-                result = preview_compression(json.load(sys.stdin.buffer))
+                result = preview_compression(request)
             elif args.command == 'preview-rename':
-                result = fileops.preview_rename(json.load(sys.stdin.buffer))
+                result = fileops.preview_rename(request)
             elif args.command == 'preview-tool':
                 from .studio_preview import preview_tool
-                result = preview_tool(json.load(sys.stdin.buffer))
+                result = preview_tool(request)
             else:
                 from .engines import check_engines
                 result = check_engines()
-            print(json.dumps({'result': result}, ensure_ascii=False))
+            print(json.dumps({'protocol_version': PROTOCOL_VERSION, 'result': result}, ensure_ascii=False))
             return 0
         except Exception as error:
-            print(json.dumps({'error': str(error)}, ensure_ascii=False))
+            print(json.dumps({'protocol_version': PROTOCOL_VERSION, 'error': error_message(error, request),
+                              'error_code': error_code(error)}, ensure_ascii=False))
             return 1
     if args.command=='list':
         specs=[spec for spec,_ in TOOLS.values()]
@@ -86,13 +92,13 @@ def main():
     req=None
     try:
         source=sys.stdin.buffer.read() if args.request=='-' else Path(args.request).read_bytes()
-        req=json.loads(source.decode('utf-8-sig'))
+        req=decode_request(source)
         emit('result',**execute(req))
         return 0
     except Cancelled as error:
-        emit('cancelled',message=str(error))
+        emit('cancelled',message=str(error),error_code='cancelled')
         return 2
     except Exception as error:
-        emit('error',message=error_message(error,req),type=type(error).__name__)
+        emit('error',message=error_message(error,req),type=diagnostic_type(error),error_code=error_code(error))
         return 1
 if __name__=='__main__': sys.exit(main())

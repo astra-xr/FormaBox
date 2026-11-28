@@ -543,8 +543,74 @@ def test_bad_parameter(tmp_path,img):
     assert img.exists()
 def test_inside_input(tmp_path):
     with pytest.raises(ValueError):run(tmp_path,'file.hash',[tmp_path])
-def test_cli(tmp_path,img):
-    req=dict(tool='image.convert',inputs=[str(img)],output=str(tmp_path/'out')); p=subprocess.run([sys.executable,'-m','formabox','run','--request','-'],input=json.dumps(req),text=True,encoding='utf-8',capture_output=True);assert p.returncode==0 and json.loads(p.stdout.splitlines()[-1])['event']=='result'
+def worker_cli(payload, *arguments):
+    if not arguments:
+        arguments = ('run', '--request', '-')
+    if not isinstance(payload, bytes):
+        payload = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+    process = subprocess.run([sys.executable, '-B', '-m', 'formabox', *arguments], input=payload,
+                             capture_output=True, timeout=15)
+    return process.returncode, [json.loads(line) for line in process.stdout.decode('utf-8').splitlines()]
+
+
+@pytest.mark.parametrize('version', [None, 1])
+def test_cli(tmp_path, img, version):
+    request = dict(tool='image.convert', inputs=[str(img)], output=str(tmp_path / '输出'))
+    if version is not None:
+        request['protocol_version'] = version
+    code, events = worker_cli(request)
+    assert code == 0 and [event['event'] for event in events] == ['progress', 'result']
+    assert all(event['protocol_version'] == 1 for event in events)
+    assert Path(events[-1]['files'][0]).is_file()
+
+
+def test_cli_rejects_invalid_protocol_requests(tmp_path, img):
+    output = tmp_path / 'out'
+    request = dict(tool='image.convert', inputs=[str(img)], output=str(output))
+    for payload, expected in [(b'{', 'invalid_request'), ([], 'invalid_request'),
+                              (dict(request, protocol_version=2), 'unsupported_protocol'),
+                              (dict(request, protocol_version=True), 'unsupported_protocol'),
+                              (dict(request, protocol_version=None), 'unsupported_protocol')]:
+        code, events = worker_cli(payload)
+        assert code == 1 and len(events) == 1
+        assert events[0]['protocol_version'] == 1 and events[0]['event'] == 'error'
+        assert events[0]['error_code'] == expected
+    assert not output.exists()
+
+
+def test_cli_classifies_errors_and_cancellation(tmp_path, img, monkeypatch):
+    output = tmp_path / 'out'
+    request = dict(protocol_version=1, tool='image.convert', inputs=[str(img)], output=str(output))
+    cancel = tmp_path / 'cancel'
+    cancel.touch()
+    monkeypatch.setenv('FORMABOX_SOFFICE', str(tmp_path / 'missing-soffice.exe'))
+    document = tmp_path / '样本.rtf'
+    document.write_text(r'{\rtf1 Hello}', encoding='ascii')
+    cases = [
+        (dict(request, inputs=[str(tmp_path / 'missing.png')]), 1, 'error', 'file_not_found'),
+        (dict(request, params={'bogus': 1}), 1, 'error', 'invalid_argument'),
+        (dict(request, tool='doc.pdf', inputs=[str(document)]), 1, 'error', 'missing_dependency'),
+        (dict(request, cancel=str(cancel)), 2, 'cancelled', 'cancelled'),
+    ]
+    for payload, exit_code, kind, error in cases:
+        code, events = worker_cli(payload)
+        assert code == exit_code and [event['event'] for event in events] == [kind]
+        assert events[0]['error_code'] == error and events[0]['message']
+    assert img.exists() and not list(output.iterdir())
+
+
+def test_cli_preview_protocol_compatibility(tmp_path, img):
+    request = dict(inputs=[str(img)], params={})
+    for payload in (request, dict(request, protocol_version=1)):
+        code, replies = worker_cli(payload, 'preview-rename')
+        assert code == 0 and len(replies) == 1
+        assert replies[0]['protocol_version'] == 1 and len(replies[0]['result']['rows']) == 1
+
+    code, replies = worker_cli(dict(request, protocol_version=2), 'preview-rename')
+    assert code == 1 and len(replies) == 1
+    assert replies[0]['error_code'] == 'unsupported_protocol' and replies[0]['error']
+
+
 @pytest.mark.skipif(not shutil.which('ffmpeg'),reason='FFmpeg unavailable')
 def test_media(tmp_path):
     p=tmp_path/'clip.mp4';subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=c=blue:s=160x120:r=15','-f','lavfi','-i','sine=frequency=440','-t','1','-c:v','libx264','-c:a','aac',str(p)],check=True)

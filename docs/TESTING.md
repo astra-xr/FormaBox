@@ -1,5 +1,11 @@
 # 实际测试记录
 
+## 0.9.1 开发中 · 预览服务
+
+本机 Windows 的 7 项定向测试通过，覆盖工具清单、批量改名、PDF 缩略图与压缩、证件照及归档预览。下载并校验 Windows CI 产物后更新 `dist/Omnora.exe`，使用项目启动器运行 `Omnora.exe --verify-runtime`，退出码为 0。
+
+[GitHub Windows CI](https://github.com/astra-xr/Omnora/actions/runs/46095619723) 通过桌面回归。PDF 分两批导入时保留第一批缩略图，生成期间清除预览会在进程退出后删除临时目录，保存的 PDF 与压缩预览逐字节一致。内置引擎环境运行 `python -m pytest -q -ra tests` 通过 67 项。使用已校验的引擎在暂存目录运行 `python -X utf8 -B tests/smoke_tools.py`，79 项通过，失败与阻塞均为 0。安装相关检查覆盖 NSIS 模板编译。
+
 ## 0.9.1 开发中 · 引擎注册表
 
 本机 Windows x64 的工具清单、命令行和引擎路径回归共 4 项通过。用显式不存在的路径运行 `python -B -X utf8 -m formabox check-engines`，四套引擎均正确报告不可用。校验 Windows CI 产物后同步本机桌面和 worker，根目录 `Omnora.exe --verify-runtime` 退出码为 0。

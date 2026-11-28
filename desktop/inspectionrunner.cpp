@@ -1,4 +1,5 @@
 #include "inspectionrunner.h"
+#include "workerprotocol.h"
 
 #include <QJsonDocument>
 #include <utility>
@@ -47,6 +48,8 @@ void InspectionRunner::start(const QString &command, int timeout, const QJsonObj
         return;
     m_command = command;
     m_request = request;
+    if (!m_request.isEmpty())
+        m_request.insert(WorkerProtocol::versionField, WorkerProtocol::version);
     m_timedOut = false;
     m_configureProcess(m_process, overrides);
     m_process.setArguments({"-B", "-m", "formabox", command});
@@ -66,6 +69,8 @@ void InspectionRunner::finish(int code, QProcess::ExitStatus status)
     auto error = reply.value("error").toString();
     if (m_timedOut)
         error = QStringLiteral("操作超时");
+    else if (!WorkerProtocol::supportsVersion(reply))
+        error = QStringLiteral("工作进程协议版本不兼容");
     else if (status != QProcess::NormalExit || (error.isEmpty() && (code != 0 || result.isUndefined())))
         error = diagnostics.isEmpty() ? QStringLiteral("无法运行工作进程") : diagnostics.left(500);
 

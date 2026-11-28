@@ -12,7 +12,11 @@ Qt 通过 `python -m formabox list` 获得 JSON 数组工具规格，规格含 i
 
 桌面的 `PreviewService` 负责 PDF 页面、压缩对照、批量改名及交互工具的预览。它验证预览文件位于当前临时目录，保留工作台分批导入的缩略图，清除正在生成的预览时等 worker 退出后再删除临时文件。保存 PDF 压缩预览时复用已经验证的文件并原子提交。`InspectionRunner` 为预览和引擎诊断共用，负责进程启动、超时和返回结果。`Controller` 转发原有 QML 接口并记录已保存的 PDF 任务。
 
-运行时使用 `python -m formabox run --request -`，stdin 写入单个 UTF-8 JSON 对象再关闭。单进程一次任务。stdout JSONL：`progress` current/total/message，`result` directory/files，`error` message/type，`cancelled` message。只有真实返回并正常退出时可判定成功。退出码 0/1/2。进度目前通常按文件计数而非时间，单个长任务可能长时间不变化。
+运行时使用 `python -m formabox run --request -`，stdin 写入单个 UTF-8 JSON 对象再关闭。单进程一次任务。请求可包含整数 `protocol_version: 1`，省略时按现有请求处理。显式传入其他版本或类型时，worker 在读取输入文件或创建输出目录前返回 `unsupported_protocol`。桌面发送版本 1，也能读取旧 worker 省略版本号的消息。`list` 与 `doctor` 保持原有的数组和对象结构。
+
+`run` 的 stdout 是 UTF-8 JSONL，每条消息含 `event` 和 `protocol_version`。可先发送 `progress`（`current`、`total`、`message`），最后发送且只发送一条 `result`、`error` 或 `cancelled`。成功消息包含 `directory` 和 `files`，进程退出码为 0。失败消息保留 `message` 和诊断字段 `type`，退出码为 1。取消消息保留 `message`，退出码为 2。失败和取消消息另有稳定的 `error_code`。进度目前通常按文件计数，单个长任务可能长时间不变化。预览与引擎诊断返回单个 JSON 对象，保留 `result` 或 `error`，增加 `protocol_version`，整体失败时增加 `error_code`。引擎诊断中的各引擎继续用对应项的 `ok` 表示状态。
+
+自动调用应读取 `error_code`。`invalid_request` 表示无法解析请求或缺少请求结构，`unsupported_protocol` 表示协议版本错误，`invalid_argument` 表示工具或参数无效。`file_not_found`、`permission_denied`、`file_conflict` 和 `io_error` 区分文件系统问题。`missing_dependency`、`engine_failed` 和 `timeout` 区分依赖缺失、外部程序失败和超时。`cancelled` 表示取消，`task_failed` 用作其他失败。桌面将错误码保存到对应任务，并会单独报告无效消息、进程启动或输出验证错误。
 
 取消机制：桌面端创建每任务独立临时目录，取消时写标记文件，worker 在循环与外部进程轮询中检查；库内部的单次长调用未必能即时取消。Python 进程崩溃或被强制终止可能遗留暂存目录和外部子进程。后续用 Windows Job Object/受限令牌等做进程树控制与 OS 级沙箱。
 

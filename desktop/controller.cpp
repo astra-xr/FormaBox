@@ -1,5 +1,6 @@
 #include "controller.h"
 #include "outputpath.h"
+#include "workerprotocol.h"
 #include <QCoreApplication>
 #include <QClipboard>
 #include <QStandardPaths>
@@ -76,7 +77,8 @@ Controller::Controller(QObject *parent)
  connect(&worker,&QProcess::readyReadStandardError,this,[this]{worker.readAllStandardError();});
  connect(&worker,&QProcess::finished,this,&Controller::finalize);
  connect(&worker,&QProcess::errorOccurred,this,[this](QProcess::ProcessError e){
-  if(e==QProcess::FailedToStart && active>=0)finishJob({{"state","失败"},{"message",worker.errorString()}});
+  if(e==QProcess::FailedToStart && active>=0)
+   finishJob({{"state","失败"},{"message",worker.errorString()},{"errorCode","process_start_failed"}});
  });
  connect(&inspection, &InspectionRunner::busyChanged, this, &Controller::inspectionChanged);
  connect(&inspection, &InspectionRunner::finished, this, [this](const QString &command, const QJsonObject &,
@@ -375,7 +377,7 @@ void Controller::startNext(){
  active=request.index;
  activeRequest=request.json;
  outcome={};
- protocolError=false;
+ protocolError.clear();
  buffer.clear();
  temp=std::make_unique<QTemporaryDir>();
  if(!temp->isValid()){
@@ -383,33 +385,46 @@ void Controller::startNext(){
   return;
  }
  activeRequest.insert("cancel",temp->filePath("cancel"));
+ activeRequest.insert(WorkerProtocol::versionField, WorkerProtocol::version);
  configure(worker);
  worker.setArguments({"-B","-m","formabox","run","--request","-"});
  update(active,{{"state","运行中"},{"progress",-1.0},{"message","准备处理"}});
  worker.start();
 }
 void Controller::processLine(QByteArray line){
- if(active<0||line.trimmed().isEmpty())return;
- const auto object=QJsonDocument::fromJson(line).object();
+ if(active<0||!protocolError.isEmpty()||line.trimmed().isEmpty())return;
+ const auto document=QJsonDocument::fromJson(line);
+ if(!document.isObject()||!outcome.isEmpty()){
+  protocolError=QStringLiteral("工作进程返回了无效的协议消息");
+  return;
+ }
+ const auto object=document.object();
+ if(!WorkerProtocol::supportsVersion(object)){
+  protocolError=QStringLiteral("工作进程协议版本不兼容");
+  return;
+ }
  const auto event=object.value("event").toString();
- if(!outcome.isEmpty()){
-  protocolError=true;
- }else if(event=="progress"){
+ if(event=="progress"){
   const auto total=object.value("total").toDouble();
   const auto progress=total>0?std::clamp(object.value("current").toDouble()/total,0.0,0.99):-1.0;
   update(active,{{"progress",progress},{"message",object.value("message").toString()}});
- }else if(event=="result"||event=="error"||event=="cancelled"){
+ }else if(event=="result"||((event=="error"||event=="cancelled")&&
+          (!object.contains(WorkerProtocol::versionField)||!object.value("error_code").toString().isEmpty()))){
   outcome=object;
  }else{
-  protocolError=true;
+  protocolError=QStringLiteral("工作进程返回了无效的协议消息");
  }
 }
 void Controller::finalize(int code,QProcess::ExitStatus exitStatus){
  if(active<0)return;
  buffer+=worker.readAllStandardOutput();
  for(const auto &line:buffer.split('\n'))processLine(line);
+ if(!protocolError.isEmpty()){
+  finishJob({{"state","失败"},{"message",protocolError},{"errorCode","protocol_error"}});
+  return;
+ }
  const auto event=outcome.value("event").toString();
- if(!protocolError&&exitStatus==QProcess::NormalExit){
+ if(exitStatus==QProcess::NormalExit){
   if(event=="result"&&code==0){
    const QFileInfo directory(outcome.value("directory").toString());
    const auto files=outcome.value("files").toArray();
@@ -427,15 +442,16 @@ void Controller::finalize(int code,QProcess::ExitStatus exitStatus){
                {"message",QStringLiteral("输出 %1 项").arg(files.size())},{"outputs",outputs}});
     return;
    }
-   finishJob({{"state","失败"},{"message","工作进程返回的结果文件无效"}});
+   finishJob({{"state","失败"},{"message","工作进程返回的结果文件无效"},{"errorCode","invalid_output"}});
    return;
   }
   if((event=="error"&&code==1)||(event=="cancelled"&&code==2)){
-   finishJob({{"state",event=="error"?"失败":"已取消"},{"message",outcome.value("message").toString()}});
+   finishJob({{"state",event=="error"?"失败":"已取消"},{"message",outcome.value("message").toString()},
+              {"errorCode",outcome.value("error_code").toString(event=="error"?"task_failed":"cancelled")}});
    return;
   }
  }
- finishJob({{"state","失败"},{"message",QStringLiteral("工作进程异常退出 (%1)").arg(code)}});
+ finishJob({{"state","失败"},{"message",QStringLiteral("工作进程异常退出 (%1)").arg(code)},{"errorCode","process_exit_failed"}});
 }
 void Controller::finishJob(QVariantMap values){
  const auto usesPassword=[](const QJsonObject &request){return request.value("params").toObject().contains("password");};

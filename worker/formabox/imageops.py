@@ -161,7 +161,7 @@ def ocr_engine(ctx, lang):
     engine=exe('tesseract')
     languages=set(run_tesseract(ctx, engine, '--list-langs', timeout=15).splitlines())
     missing=set(lang.split('+'))-languages
-    if missing: raise RuntimeError('缺少 OCR 语言包: '+', '.join(sorted(missing)))
+    if missing: raise MissingDependency('缺少 OCR 语言包: '+', '.join(sorted(missing)))
     return engine
 
 

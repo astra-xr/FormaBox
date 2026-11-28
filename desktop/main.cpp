@@ -20,6 +20,7 @@
 #include <QTimer>
 #include <functional>
 #include "controller.h"
+#include "workerprotocol.h"
 #ifdef Q_OS_WIN
 #include "windowframe_win.h"
 #endif
@@ -555,6 +556,32 @@ static bool verifyToolCatalogueReload(Controller &controller, const QVariantList
     return sameTools && updates == 2;
 }
 
+static bool verifyWorkerFailure(Controller &controller)
+{
+    if (!WorkerProtocol::supportsVersion({}) || !WorkerProtocol::supportsVersion({{"protocol_version", 1}}) ||
+        WorkerProtocol::supportsVersion({{"protocol_version", 2}}) ||
+        WorkerProtocol::supportsVersion({{"protocol_version", true}}))
+        return false;
+    QTemporaryDir fixture;
+    if (!fixture.isValid())
+        return false;
+    const auto count = controller.jobs().size();
+    QEventLoop wait;
+    QObject::connect(&controller, &Controller::jobsChanged, &wait, [&] {
+        if (!controller.busy())
+            wait.quit();
+    });
+    QTimer::singleShot(6500, &wait, &QEventLoop::quit);
+    controller.submit("image.convert", {fixture.filePath("missing.png")}, {}, fixture.filePath("out"));
+    if (controller.busy())
+        wait.exec();
+    if (controller.busy() || controller.jobs().size() != count + 1)
+        return false;
+    const auto job = controller.jobs().constLast().toMap();
+    return job.value("state") == QStringLiteral("失败") && job.value("errorCode") == "file_not_found" &&
+           job.value("canRetry").toBool() && !QFileInfo(fixture.filePath("out")).exists();
+}
+
 static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controller &controller)
 {
     if (root->property("title").toString() != QStringLiteral("万象 · Omnora"))
@@ -618,7 +645,8 @@ static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controll
     window.setProperty("inputs", engine.toScriptValue(
         QVariantList{QStringLiteral("one.txt"), QStringLiteral("two.txt")}));
     const bool ready = window.property("workflowReady").toBool() &&
-                       verifyWorkbench(engine, root, controller) && verifySubtitles(engine, root, controller);
+                       verifyWorkbench(engine, root, controller) && verifySubtitles(engine, root, controller) &&
+                       verifyWorkerFailure(controller);
     if (ready)
         qInfo("Desktop checks passed: featured tools, grouped navigation, global search, button themes, PDF editing, task results, rename preview, workflows, and subtitles.");
     return ready;
