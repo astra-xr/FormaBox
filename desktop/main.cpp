@@ -831,7 +831,7 @@ static bool verifyTaskArtifacts(const QString &directory)
 
 static bool verifyCommittedRecovery(const QString &directory)
 {
-    const QDir root(directory);
+    QDir root(directory);
     const QString immediate = TaskStore::newId(), late = TaskStore::newId(), invalid = TaskStore::newId();
     const auto outputName = [](const QString &id) { return "Omnora-" + id; };
     {
