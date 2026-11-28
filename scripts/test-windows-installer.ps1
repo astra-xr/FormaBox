@@ -50,6 +50,7 @@ try {
             ffmpeg = 'engines/ffmpeg/ffmpeg.exe'
             tesseract = 'engines/tesseract/tesseract.exe'
             LibreOffice = 'engines/libreoffice/program/soffice.com'
+            'whisper-cli' = 'engines/whisper/whisper-cli.exe'
         }
         foreach ($engine in $engineFiles.Keys) {
             $expected = (Resolve-Path -LiteralPath (Join-Path $target $engineFiles[$engine])).Path

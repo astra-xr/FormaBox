@@ -62,11 +62,19 @@ def test_office(ctx, _engine):
     return 'Word 转 PDF 测试通过'
 
 
+def test_whisper(ctx, engine):
+    help_text = ctx.run([engine, '--help'], timeout=5)
+    if '--model' not in help_text or '--file' not in help_text:
+        raise RuntimeError('未检测到 whisper-cli 的模型和音频输入选项')
+    return 'whisper.cpp 已启动，语音模型在转写时检查'
+
+
 def check_engines():
     engines = (
         ('LibreOffice', office_engine(), test_office),
         ('ffmpeg', find_executable('ffmpeg'), test_ffmpeg),
         ('tesseract', find_executable('tesseract'), test_tesseract),
+        ('whisper-cli', find_executable('whisper-cli'), test_whisper),
     )
     results = {}
     for name, path, check in engines:

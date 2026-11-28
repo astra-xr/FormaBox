@@ -6,7 +6,9 @@
 
 运行 `python -m formabox list` 后与 `docs/tools-manifest.json` 比对，79 项工具的 ID、顺序和规格一致。拆分后重跑 `test_manifest`、`test_cli` 和 `test_workflow_progress_across_steps`，3 项通过。Qt 6.8.3 的 `moc` 成功生成 `ToolRegistry` 和 `Controller` 的元对象，保留了原有的 `tools` 属性和通知信号。
 
-新增桌面回归检查连续三次刷新时是否合并等待中的请求，以及刷新前后目录规格是否一致。此前本机 C++ 编译触发了 Visual Studio 诊断联网，当前轮次的 `python -B tests/smoke_tools.py` 也因同类诊断连接被自动拦截，关闭外部引擎的试跑同样被拦截。新版 C++ 编译、桌面回归、79 项全工具实跑和安装包验收仍待完成。
+本机编译和全工具实跑因 Visual Studio 诊断连接被自动拦截，后续使用 [GitHub Windows CI](https://github.com/astra-xr/Omnora/actions/runs/46045286553) 验收。Windows x64、Qt 6.8.3 和 MSVC 2022 成功编译并运行 `Omnora.exe --verify-runtime`。新增回归验证连续三次刷新合并为两次加载，工具规格和顺序一致。校验 CI 产物 SHA-256 后更新本机 `dist/Omnora.exe`，通过项目启动器再次运行桌面回归，退出码为 0。
+
+临时分支 `qa/omnora-091-tool-registry` 使用从已发布的 0.9.0 安装包提取且经校验的引擎运行 `python -m pytest -q -ra tests`，67 项通过，无跳过。重新构建完整 NSIS 安装包后运行 `scripts/test-windows-installer.ps1 -ExpectBundledEngines`，验证中文安装路径、桌面启动、发送到和快捷动作、卸载保留用户文件。安装环境中 79 个工具全部实跑通过，失败和阻塞均为 0。安装包用于临时分支验收。
 
 ## 0.9.0 文件工作台扩展
 

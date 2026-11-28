@@ -9,6 +9,7 @@
 #include <QTimer>
 #include <QJsonObject>
 #include <memory>
+#include "engineregistry.h"
 #include "toolregistry.h"
 class Controller final : public QObject {
  Q_OBJECT
@@ -22,6 +23,7 @@ class Controller final : public QObject {
  Q_PROPERTY(QVariantList presets READ presets NOTIFY presetsChanged)
  Q_PROPERTY(QStringList favorites READ favorites NOTIFY favoritesChanged)
  Q_PROPERTY(bool hasBundledEngines READ hasBundledEngines CONSTANT)
+ Q_PROPERTY(QVariantList engineOptions READ engineOptions CONSTANT)
 public:
  explicit Controller(QObject *parent=nullptr);
  QVariantList tools() const {return toolRegistry.tools();}
@@ -39,7 +41,8 @@ public:
  Q_INVOKABLE void clearStudioPreview();
  Q_INVOKABLE void playStudioSample(const QUrl &url);
  Q_INVOKABLE void copyText(const QString &text);
- bool hasBundledEngines() const { return !bundledEnginePaths.isEmpty(); }
+ bool hasBundledEngines() const { return engineRegistry.hasBundledEngines(); }
+ QVariantList engineOptions() const { return engineRegistry.options(); }
  Q_INVOKABLE QString savePreset(QString name, const QString &tool, const QVariantMap &params,
                                 const QVariantList &inputs);
  Q_INVOKABLE QString removePreset(const QString &name);
@@ -78,11 +81,11 @@ signals:
  void renamePreviewReady(QVariantList rows, QString plan, QString error);
 private:
  struct Request {int index; QJsonObject json;};
+ const EngineRegistry engineRegistry;
  ToolRegistry toolRegistry;
  QVariantList m_jobs; QString m_status; QProcess worker; QByteArray buffer; QQueue<Request> pending; int active=-1;
  QVariantList m_presets;
  QStringList m_favorites;
- const QVariantMap bundledEnginePaths;
  QString storePreset(QString name, QVariantMap preset, const QVariantList &inputs);
  QString presetParameters(const QString &tool, const QVariantMap &params, QVariantMap &values) const;
  QString writePresets(const QVariantList &presets);

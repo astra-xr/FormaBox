@@ -10,11 +10,7 @@ Dialog {
     property var results: ({})
     property string message: ""
     property string browseEngine: ""
-    readonly property var engines: [
-        {id: "LibreOffice", name: "LibreOffice", filter: "LibreOffice (soffice.exe soffice.com)"},
-        {id: "ffmpeg", name: "FFmpeg", filter: "FFmpeg (ffmpeg.exe)"},
-        {id: "tesseract", name: "Tesseract", filter: "Tesseract (tesseract.exe)"}
-    ]
+    readonly property var engines: controller.engineOptions
 
     title: "引擎设置"
     anchors.centerIn: Overlay.overlay

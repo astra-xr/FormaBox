@@ -21,23 +21,6 @@
 #include <algorithm>
 
 namespace {
-constexpr const char *engineNames[] = {"LibreOffice", "ffmpeg", "tesseract"};
-constexpr const char *engineVariables[] = {"FORMABOX_SOFFICE", "FORMABOX_FFMPEG", "FORMABOX_TESSERACT"};
-
-QVariantMap detectBundledEngines() {
- const QDir application(QCoreApplication::applicationDirPath());
- const char *files[] = {"engines/libreoffice/program/soffice.com", "engines/ffmpeg/ffmpeg.exe",
-                        "engines/tesseract/tesseract.exe"};
- QVariantMap paths;
- for (int i = 0; i < 3; ++i) {
-  const QFileInfo engine(application.filePath(QString::fromLatin1(files[i])));
-  if (!engine.isFile())
-   return {};
-  paths.insert(engineNames[i], engine.absoluteFilePath());
- }
- return paths;
-}
-
 bool isTaskOutput(const QFileInfo &directory, const QFileInfo &file) {
  if (!directory.isDir() || !directory.isAbsolute() || !file.isAbsolute() || file.isSymLink() ||
      !(file.isFile() || file.isDir()))
@@ -77,8 +60,8 @@ QString batchSession(const QJsonObject &request) {
 }
 
 Controller::Controller(QObject *parent)
- : QObject(parent), toolRegistry([this](QProcess &process) { configure(process); }),
-   bundledEnginePaths(detectBundledEngines()) {
+ : QObject(parent), engineRegistry(QCoreApplication::applicationDirPath()),
+   toolRegistry([this](QProcess &process) { configure(process); }) {
  loadHistory();
  m_presets = QSettings().value("tools/presets").toList();
  m_favorites = QSettings().value("tools/favorites").toStringList();
@@ -141,15 +124,7 @@ void Controller::configure(QProcess &p, const QVariantMap *overrides){
  auto env=QProcessEnvironment::systemEnvironment();env.insert("PYTHONUTF8","1");env.insert("PYTHONSAFEPATH","1");
  QString root=qEnvironmentVariable("FORMABOX_WORKER_DIR");if(root.isEmpty())root=QDir(QCoreApplication::applicationDirPath()).filePath("worker");
  if(QFileInfo::exists(QDir(root).filePath("formabox"))){QString old=env.value("PYTHONPATH");env.insert("PYTHONPATH",root+(old.isEmpty()?QString():QString(QDir::listSeparator())+old));}
- QString engines=QDir(QCoreApplication::applicationDirPath()).filePath("engines");env.insert("PATH",engines+QString(QDir::listSeparator())+env.value("PATH"));
- const auto paths = hasBundledEngines() ? bundledEnginePaths : (overrides ? *overrides : enginePaths());
- if (hasBundledEngines())
-  env.remove("TESSDATA_PREFIX");
- for (int i = 0; i < 3; ++i) {
-  const auto path = paths.value(engineNames[i]).toString();
-  if (!path.isEmpty())
-   env.insert(engineVariables[i], path);
- }
+ engineRegistry.configure(env, overrides);
  p.setProcessEnvironment(env);p.setProgram(python);
 }
 void Controller::reload(){toolRegistry.reload();}
@@ -284,32 +259,18 @@ bool Controller::openResult(int index, const QString &path) {
 }
 
 QVariantMap Controller::enginePaths() const {
- return QSettings().value("engines/paths").toMap();
+ return engineRegistry.savedPaths();
 }
 
 void Controller::checkEngines(const QVariantMap &paths, bool save) {
  if (inspecting()) return;
- QVariantMap candidates;
- for (const auto *name : engineNames) {
-  const auto path = paths.value(name).toString().trimmed();
-  if (path.isEmpty()) continue;
-  const QFileInfo executable(path);
-  const auto filename = executable.fileName().toLower();
-  const bool office = QByteArray(name) == "LibreOffice";
-  const QString stem = office ? QStringLiteral("soffice") : QString::fromLatin1(name);
-  bool validName = filename == stem + ".exe" || (office && filename == "soffice.com");
-#ifndef Q_OS_WIN
-  validName = validName || filename == stem || (office && filename == "libreoffice");
-#endif
-  if (!executable.isAbsolute() || !executable.isFile() || !validName) {
-   emit enginesChecked({}, QStringLiteral("%1：请选择安装目录中的可执行文件。").arg(QString::fromLatin1(name)));
-   return;
-  }
-  candidates.insert(name, executable.absoluteFilePath());
+ const auto error = engineRegistry.validate(paths, candidateEngines);
+ if (!error.isEmpty()) {
+  emit enginesChecked({}, error);
+  return;
  }
- candidateEngines = candidates;
  saveEngines = save;
- startInspection("check-engines", 70000, &candidateEngines);
+ startInspection("check-engines", 75000, &candidateEngines);
 }
 
 void Controller::previewPdf(const QVariantList &inputs, int remaining) {
@@ -546,24 +507,14 @@ void Controller::finishInspection(bool exited) {
  } else {
   checks = result.toObject().toVariantMap();
   if (error.isEmpty() && saveEngines) {
-   for (auto it = candidateEngines.cbegin(); it != candidateEngines.cend(); ++it) {
-    if (!checks.value(it.key()).toMap().value("ok").toBool()) {
-     error = QStringLiteral("%1 未通过测试，设置未保存").arg(it.key());
-     break;
-    }
-   }
+   error = engineRegistry.saveTested(candidateEngines, checks);
    if (error.isEmpty()) {
-    QSettings settings;
-    settings.setValue("engines/paths", candidateEngines);
-    settings.sync();
-    if (settings.status() == QSettings::NoError) {
-     error = QStringLiteral("设置已保存");
-     reload();
-    } else {
-     error = QStringLiteral("无法保存引擎设置");
-    }
+    error = QStringLiteral("设置已保存");
+    reload();
    }
   }
+  candidateEngines.clear();
+  saveEngines = false;
   if (error.isEmpty())
    error = QStringLiteral("测试结束");
  }

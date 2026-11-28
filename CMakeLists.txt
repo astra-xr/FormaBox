@@ -23,6 +23,7 @@ qt_standard_project_setup(REQUIRES 6.5)
 qt_add_executable(Omnora WIN32
     desktop/main.cpp
     desktop/controller.cpp desktop/controller.h
+    desktop/engineregistry.cpp desktop/engineregistry.h
     desktop/toolregistry.cpp desktop/toolregistry.h)
 set(branding_dir "${CMAKE_CURRENT_SOURCE_DIR}/desktop/assets")
 qt_add_resources(Omnora "branding"

@@ -310,6 +310,70 @@ static bool verifyWorkbench(QQmlApplicationEngine &engine, QObject *root, Contro
            verifyFileTools(engine, root, controller, imagePath, QDir(files.path()));
 }
 
+static bool verifyEngineRegistry()
+{
+    QTemporaryDir fixture;
+    if (!fixture.isValid())
+        return false;
+    const QDir root(fixture.path());
+    const QMap<QString, QString> bundled{
+        {"FORMABOX_SOFFICE", "engines/libreoffice/program/soffice.com"},
+        {"FORMABOX_FFMPEG", "engines/ffmpeg/ffmpeg.exe"},
+        {"FORMABOX_TESSERACT", "engines/tesseract/tesseract.exe"},
+        {"FORMABOX_WHISPER", "engines/whisper/whisper-cli.exe"},
+    };
+    for (const auto &relative : bundled) {
+        QFile program(root.filePath(relative));
+        if (!root.mkpath(QFileInfo(program).absolutePath()) || !program.open(QIODevice::WriteOnly))
+            return false;
+    }
+    const EngineRegistry packaged(root.path());
+    if (!packaged.hasBundledEngines() || packaged.options().size() != bundled.size())
+        return false;
+
+    QFile custom(root.filePath("whisper-cli.exe"));
+    if (!custom.open(QIODevice::WriteOnly))
+        return false;
+    custom.close();
+    const EngineRegistry development(root.filePath("development"));
+    if (development.hasBundledEngines())
+        return false;
+    const QVariantMap invalid{{"whisper-cli", "whisper-cli.exe"}};
+    const QVariantMap requested{{"whisper-cli", custom.fileName()}};
+    QVariantMap candidates;
+    if (development.validate(invalid, candidates).isEmpty() ||
+        !development.validate(requested, candidates).isEmpty() || candidates != requested)
+        return false;
+
+    QProcessEnvironment inherited;
+    for (auto it = bundled.cbegin(); it != bundled.cend(); ++it)
+        inherited.insert(it.key(), root.filePath("stale.exe"));
+    inherited.insert("TESSDATA_PREFIX", root.filePath("old-tessdata"));
+    auto packagedEnvironment = inherited;
+    packaged.configure(packagedEnvironment, &candidates);
+    for (auto it = bundled.cbegin(); it != bundled.cend(); ++it) {
+        if (packagedEnvironment.value(it.key()) != root.filePath(it.value()))
+            return false;
+    }
+    if (packagedEnvironment.contains("TESSDATA_PREFIX"))
+        return false;
+
+    const QVariantMap wrong{{"whisper-cli", QVariantMap{{"ok", true}, {"path", root.filePath("engines/whisper/whisper-cli.exe")}}}};
+    const QVariantMap verified{{"whisper-cli", QVariantMap{{"ok", true}, {"path", custom.fileName()}}}};
+    if (development.saveTested(candidates, wrong).isEmpty() || !development.savedPaths().isEmpty() ||
+        !development.saveTested(candidates, verified).isEmpty())
+        return false;
+    auto savedEnvironment = inherited;
+    development.configure(savedEnvironment);
+    auto automaticEnvironment = inherited;
+    const QVariantMap automatic;
+    development.configure(automaticEnvironment, &automatic);
+    return development.savedPaths() == candidates && development.saveTested(automatic, {}).isEmpty() &&
+           savedEnvironment.value("FORMABOX_WHISPER") == custom.fileName() &&
+           savedEnvironment.value("TESSDATA_PREFIX") == inherited.value("TESSDATA_PREFIX") &&
+           automaticEnvironment.value("FORMABOX_WHISPER") == inherited.value("FORMABOX_WHISPER");
+}
+
 static bool verifyEngineControls(QQmlApplicationEngine &engine, QObject *root, Controller &controller)
 {
     const auto *button = root->findChild<QObject *>("engineSettingsButton");
@@ -318,12 +382,15 @@ static bool verifyEngineControls(QQmlApplicationEngine &engine, QObject *root, C
         return false;
     if (!controller.hasBundledEngines()) {
         const auto dialog = engine.newQObject(settings);
-        return invokeQml(dialog, "open") && invokeQml(dialog, "close");
+        return invokeQml(dialog, "open") && dialog.property("engines").property("length").toInt() == 4 &&
+               invokeQml(dialog, "close");
     }
     if (settings)
         return false;
 
     QStringList available = {"video.frames", "image.ocr", "doc.pdf"};
+    if (QFileInfo(QDir(QCoreApplication::applicationDirPath()).filePath("engines/whisper/whisper-cli.exe")).isFile())
+        available.append("audio.transcribe");
     for (const auto &entry : controller.tools()) {
         const auto tool = entry.toMap();
         if (tool.value("missing_engines").toList().isEmpty())
@@ -333,7 +400,7 @@ static bool verifyEngineControls(QQmlApplicationEngine &engine, QObject *root, C
         qWarning().noquote() << "Bundled tools unavailable:" << available.join(", ");
         return false;
     }
-    qInfo("Bundled engine settings hidden and all three engine categories available.");
+    qInfo("Bundled engine settings hidden and packaged tools available.");
     return true;
 }
 
@@ -484,7 +551,7 @@ static bool verifyDesktop(QQmlApplicationEngine &engine, QObject *root, Controll
     const auto compare = findTool(QStringLiteral("text.diff"));
     if (converter.isEmpty() || compare.isEmpty())
         return false;
-    if (!verifyEngineControls(engine, root, controller)) {
+    if (!verifyEngineRegistry() || !verifyEngineControls(engine, root, controller)) {
         qWarning("Engine controls or bundled engine verification failed.");
         return false;
     }

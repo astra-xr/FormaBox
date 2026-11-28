@@ -118,14 +118,49 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m pytest -q -ra tests
           exit $LASTEXITCODE
-      - name: Build and test the full installer without publishing
+      - name: Verify bundled engine paths and run tools in the desktop staging directory
         if: github.ref == 'refs/heads/qa/omnora-091-tool-registry'
         shell: pwsh
         run: |
-          $compiler = Join-Path ${env:ProgramFiles(x86)} 'NSIS/makensis.exe'
-          ./scripts/package-windows.ps1 -BuildDirectory build/desktop -Python (Get-Command python).Source -MakeNsis $compiler -QtPrefix $env:QT_ROOT_DIR -EngineBundleDirectory 'build/qa-fixtures/engines'
-          $setup = Get-ChildItem -LiteralPath 'build/installers' -Filter '*-Full-Setup.exe' -File
-          $env:FORMABOX_TEST_AUDIO = (Resolve-Path -LiteralPath 'build/qa-fixtures/speech-test.wav').Path
-          $env:FORMABOX_TEST_MODEL = (Resolve-Path -LiteralPath 'build/qa-fixtures/speech-model.bin').Path
-          ./scripts/test-windows-installer.ps1 -Setup $setup.FullName -ExpectBundledEngines
-
+          $stage = (Resolve-Path 'build/desktop-check').Path
+          $runtime = Join-Path $stage 'dist'
+          $target = Join-Path $runtime 'engines'
+          robocopy.exe build/qa-fixtures/engines $target /E /XJ /R:0 /W:0 /NFL /NDL /NJH /NJS /NP
+          if ($LASTEXITCODE -ge 8) { throw 'Could not stage the verified release engines' }
+          $env:FORMABOX_WORKER_DIR = Join-Path $runtime 'worker'
+          $env:PYTHONPATH = $env:FORMABOX_WORKER_DIR
+          $env:FORMABOX_PYTHON = (Get-Command python).Source
+          $env:PYTHONUTF8 = '1'
+          $env:QT_QUICK_BACKEND = 'software'
+          $env:QT_FORCE_STDERR_LOGGING = '1'
+          $env:FORMABOX_TEST_AUDIO = (Resolve-Path 'build/qa-fixtures/speech-test.wav').Path
+          $env:FORMABOX_TEST_MODEL = (Resolve-Path 'build/qa-fixtures/speech-model.bin').Path
+          $json = python -X utf8 -B -m formabox check-engines
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $results = ($json | ConvertFrom-Json).result
+          $paths = @{
+              LibreOffice = 'libreoffice/program/soffice.com'
+              ffmpeg = 'ffmpeg/ffmpeg.exe'
+              tesseract = 'tesseract/tesseract.exe'
+              'whisper-cli' = 'whisper/whisper-cli.exe'
+          }
+          foreach ($id in $paths.Keys) {
+              $expected = (Resolve-Path -LiteralPath (Join-Path $target $paths[$id])).Path
+              if (!$results.$id.ok -or $results.$id.path -ne $expected) {
+                  throw "Bundled engine $id failed: $($results.$id.message)"
+              }
+              Write-Host "Verified $($id): $($results.$id.message)"
+          }
+          $stale = Join-Path $stage 'stale.exe'
+          $env:FORMABOX_SOFFICE = $stale
+          $env:FORMABOX_FFMPEG = $stale
+          $env:FORMABOX_TESSERACT = $stale
+          $env:FORMABOX_WHISPER = $stale
+          $env:TESSDATA_PREFIX = Join-Path $stage 'stale-tessdata'
+          $log = Join-Path $stage 'bundled-verify.log'
+          $verify = Start-Process -FilePath (Join-Path $runtime 'Omnora.exe') -ArgumentList '--verify-runtime' -WindowStyle Hidden -RedirectStandardError $log -PassThru -Wait
+          Get-Content -LiteralPath $log -Encoding utf8
+          if ($verify.ExitCode) { exit $verify.ExitCode }
+          Remove-Item Env:FORMABOX_SOFFICE,Env:FORMABOX_FFMPEG,Env:FORMABOX_TESSERACT,Env:FORMABOX_WHISPER,Env:TESSDATA_PREFIX
+          python -X utf8 -B tests/smoke_tools.py --scratch $stage --report (Join-Path $stage 'engine-smoke.json')
+          exit $LASTEXITCODE
